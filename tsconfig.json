@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "strict": true,
+    "noEmit": true
+  },
+  "allowJs": true,
+  "checkJs": true,
+  "files": ["./client/globals.d.ts"],
+  "include": ["./**/*.js"]
+}

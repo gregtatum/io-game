@@ -1,0 +1,23 @@
+{
+  "name": "io-game",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "Greg Tatum <tatum.creative@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ts": "tsc --noEmit",
+    "lint": "eslint client server"
+  },
+  "dependencies": {
+    "babel-eslint": "^10.1.0",
+    "eslint": "^7.14.0",
+    "eslint-config-prettier": "^6.15.0",
+    "eslint-plugin-prettier": "^3.1.4",
+    "phaser": "^3.24.1",
+    "prettier": "^2.2.0",
+    "typescript": "^4.1.2",
+    "ws": "^7.4.0"
+  }
+}
