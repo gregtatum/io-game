@@ -1,11 +1,17 @@
 {
   "compilerOptions": {
     "module": "esnext",
+    "moduleResolution": "node",
     "strict": true,
-    "noEmit": true
+    "noEmit": true,
+    "allowSyntheticDefaultImports": true
   },
   "allowJs": true,
   "checkJs": true,
-  "files": ["./client/globals.d.ts"],
-  "include": ["./**/*.js"]
+  "files": [
+    "src/@types/client.d.ts",
+    "src/@types/globals.d.ts",
+    "src/@types/server.d.ts"
+  ],
+  "include": ["src", "@types"]
 }

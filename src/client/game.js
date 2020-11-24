@@ -1,11 +1,15 @@
 // @ts-check
 
 /**
- * @typedef {import("./types")} T
+ * @typedef {import("../types")} T
  * @typedef {Phaser.Math.Vector2} Vector2
- * @typedef {import("./types").Direction} Direction
+ * @typedef {import("../types").Direction} Direction
  */
 
+/**
+ * @param {string} key
+ * @param {unknown} value
+ */
 function setDebugGlobal(key, value) {
   console.log('Global: ' + key);
   window[key] = value;
@@ -427,7 +431,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(playerSprite);
 
     const player = new Player(playerSprite, 6, 8, 8);
-    setDebugGlobal(player);
+    setDebugGlobal('player', player);
     this.gridPhysics = new GridPhysics(player, cloudCityTilemap);
     this.gridControls = new GridControls(this.input, this.gridPhysics);
   }
