@@ -119,6 +119,13 @@
   resolved "https://registry.yarnpkg.com/@types/node/-/node-14.14.9.tgz#04afc9a25c6ff93da14deabd65dc44485b53c8d6"
   integrity sha512-JsoLXFppG62tWTklIoO4knA+oDTYsmqWxHRvd4lpmfQRNhX6osheUOWETP2jMoV/2bEHuMra8Pp3Dmo/stBFcw==
 
+"@types/serve-handler@^6.1.0":
+  version "6.1.0"
+  resolved "https://registry.yarnpkg.com/@types/serve-handler/-/serve-handler-6.1.0.tgz#6952aaf864e542297ce8a2480b3e0d9ea59de7f6"
+  integrity sha512-F9BpWotLZrQvq1CdE3oCnVmQUb6dWq20HSB/qjF4mG7WkZjPQ6fye8veznMKoBPhFJve4yz9C1NOITdTcoLngQ==
+  dependencies:
+    "@types/node" "*"
+
 "@types/ws@^7.4.0":
   version "7.4.0"
   resolved "https://registry.yarnpkg.com/@types/ws/-/ws-7.4.0.tgz#499690ea08736e05a8186113dac37769ab251a0e"

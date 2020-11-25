@@ -1,9 +1,11 @@
 // @ts-check
 
 /**
- * @typedef {import("../types")} T
+ * @typedef {import("types").Direction} Direction
+ */
+
+/**
  * @typedef {Phaser.Math.Vector2} Vector2
- * @typedef {import("../types").Direction} Direction
  */
 
 /**
@@ -12,9 +14,11 @@
  */
 function setDebugGlobal(key, value) {
   console.log('Global: ' + key);
+  // @ts-ignore
   window[key] = value;
 }
 
+/** @type {{[key: string]: Phaser.Math.Vector2}} */
 const movementDirectionVectors = {
   up: Phaser.Math.Vector2.UP,
   down: Phaser.Math.Vector2.DOWN,
@@ -34,13 +38,13 @@ export class GridControls {
 
   update() {
     const cursors = this.input.keyboard.createCursorKeys();
-    if (cursors.left.isDown) {
+    if (cursors.left && cursors.left.isDown) {
       this.gridPhysics.movePlayer('left');
-    } else if (cursors.right.isDown) {
+    } else if (cursors.right && cursors.right.isDown) {
       this.gridPhysics.movePlayer('right');
-    } else if (cursors.up.isDown) {
+    } else if (cursors.up && cursors.up.isDown) {
       this.gridPhysics.movePlayer('up');
-    } else if (cursors.down.isDown) {
+    } else if (cursors.down && cursors.down.isDown) {
       this.gridPhysics.movePlayer('down');
     }
   }
@@ -109,7 +113,11 @@ export class GridPhysics {
    * @returns {Vector2}
    */
   tilePosInDirection(direction) {
-    return this.player.getTilePos().add(movementDirectionVectors[direction]);
+    const vec = movementDirectionVectors[direction];
+    if (!vec) {
+      throw new Error('Could not find the vector.');
+    }
+    return this.player.getTilePos().add(vec);
   }
 
   /**
@@ -247,12 +255,15 @@ export class GridPhysics {
   }
 
   /**
+   * @param {number} speed
    * @returns {Vector2}
    */
   movementDistance(speed) {
-    return movementDirectionVectors[this.movementDirection]
-      .clone()
-      .multiply(new Vector2(speed));
+    const vec = movementDirectionVectors[this.movementDirection];
+    if (!vec) {
+      throw new Error('Could not find the vector.');
+    }
+    return vec.clone().multiply(new Vector2(speed));
   }
 }
 
@@ -385,9 +396,11 @@ export class Player {
     const playerCharCol = this.characterIndex % Player.CHARS_IN_ROW;
     const framesInRow = Player.CHARS_IN_ROW * Player.FRAMES_PER_CHAR_ROW;
     const framesInSameRowBefore = Player.FRAMES_PER_CHAR_ROW * playerCharCol;
-    const rows =
-      this.directionToFrameRow[direction] +
-      playerCharRow * Player.FRAMES_PER_CHAR_COL;
+    const dir = this.directionToFrameRow[direction];
+    if (dir === undefined) {
+      throw new Error('Could not find the direction.');
+    }
+    const rows = dir + playerCharRow * Player.FRAMES_PER_CHAR_COL;
     const startFrame = framesInSameRowBefore + rows * framesInRow;
     return {
       leftFoot: startFrame,
@@ -403,9 +416,9 @@ export class GameScene extends Phaser.Scene {
 
   static TILE_SIZE = 48;
 
-  /** @type {GridControls} */
+  /** @type {GridControls | undefined} */
   gridControls;
-  /** @type {GridPhysics} */
+  /** @type {GridPhysics | undefined} */
   gridPhysics;
 
   constructor() {
@@ -441,8 +454,12 @@ export class GameScene extends Phaser.Scene {
    * @param {number} delta
    */
   update(_time, delta) {
-    this.gridControls.update();
-    this.gridPhysics.update(delta);
+    const { gridControls, gridPhysics } = this;
+    if (!gridControls || !gridPhysics) {
+      throw new Error("Game isn't properly initialized.");
+    }
+    gridControls.update();
+    gridPhysics.update(delta);
   }
 
   preload() {

@@ -2,9 +2,15 @@
 import WebSocket from 'ws';
 const WEBSOCKET_PORT = 8080;
 
+/**
+ * @typedef {import("types").ServerPlayer} ServerPlayer
+ * @typedef {import("types").ServerToClient} ServerToClient
+ * @typedef {import("types").ClientToServer} ClientToServer
+ */
+
 let lastPlayerGeneration = 0;
 
-/** @type {Map<number, Server.Player>} */
+/** @type {Map<number, ServerPlayer>} */
 const players = new Map();
 
 export function startWebsocketStart() {
@@ -21,12 +27,12 @@ export function startWebsocketStart() {
 
 /**
  * @param {WebSocket} socket
- * @returns {Server.Player}
+ * @returns {ServerPlayer}
  */
 function createNewPlayer(socket) {
   const generation = lastPlayerGeneration++;
 
-  /** @type {Server.Player} */
+  /** @type {ServerPlayer} */
   const player = {
     socket,
     generation,
@@ -74,9 +80,9 @@ function handleWebSocketConnection(socket) {
 
 /**
  * @param {ClientToServer} message
- * @param {Server.Player} player
+ * @param {ServerPlayer} _player
  */
-function handleMessage(message, player) {
+function handleMessage(message, _player) {
   switch (message.type) {
     case 'tick': {
       const { x, y } = message;
