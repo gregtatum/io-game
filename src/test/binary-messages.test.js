@@ -48,7 +48,7 @@ describe('binary reader', () => {
   it('reads a variety of values', () => {
     const writer = new BinaryWriter();
     writer.writeByte(0xaa);
-    writer.writeTag('tick');
+    writer.writeTag('broadcast-tick');
     writer.writeUint32(0x00112233);
     writer.writeByte(0xbb);
     writer.writeUint32(0x44556677);
@@ -79,7 +79,7 @@ describe('binary reader', () => {
       reader.readUint32(),
     ]).toEqual([
       0xaa,
-      'tick',
+      'broadcast-tick',
       0x00112233,
       0xbb,
       0x44556677,

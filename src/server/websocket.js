@@ -47,6 +47,9 @@ function createNewPlayer(socket) {
   return player;
 }
 
+/** @type {NodeJS.Timeout} */
+let intervalId;
+
 /**
  * @param {WebSocket} socket
  */
@@ -76,11 +79,18 @@ function handleWebSocketConnection(socket) {
 
   socket.send(JSON.stringify({ message: 'message from server' }));
 
-  const intervalId = setInterval(broadcastTick, 32);
+  if (players.size === 1) {
+    // Start up the broadcast loop.
+    intervalId = setInterval(broadcastTick, 1000);
+  }
 
   socket.on('close', () => {
     players.delete(player.generation);
-    clearInterval(intervalId);
+
+    if (players.size === 0) {
+      // Don't do a broadcast loop if there are no players.
+      clearInterval(intervalId);
+    }
   });
 }
 
@@ -89,7 +99,7 @@ function handleWebSocketConnection(socket) {
  * the information in a binary serialized format to make it efficient.
  */
 function broadcastTick() {
-  binaryWriter.writeTag('tick');
+  binaryWriter.writeTag('broadcast-tick');
   binaryWriter.writeUint16(players.size);
 
   for (const player of players.values()) {
@@ -97,8 +107,9 @@ function broadcastTick() {
     binaryWriter.writeFloat64(player.position.x);
     binaryWriter.writeFloat64(player.position.y);
   }
+  const buffer = binaryWriter.finalize();
   for (const player of players.values()) {
-    player.socket.send(binaryWriter.finalize());
+    player.socket.send(buffer);
   }
 }
 

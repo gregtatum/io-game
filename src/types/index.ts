@@ -18,6 +18,11 @@ export type Direction =
   | "right"
   | "down"
 
+// Tags for binary messages for client server communication.
+// Make sure and update the `broadcastTags` variable when
+// adding to this list.
+export type BroadcastTag = "broadcast-tick";
+
 export type ClientToServer =
   { type: 'tick', x: number, y: number };
 

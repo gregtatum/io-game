@@ -1,6 +1,10 @@
 // @ts-check
 
 /**
+ * @typedef {import('types').BroadcastTag} BroadcastTag
+ */
+
+/**
  * Provide a growable array of values. It works like rust's Vec. This is to attempt
  * to mitigate the costs of using native arrays and structured cloning. Hopefully
  * the locality of typed arrays will help here.
@@ -49,12 +53,14 @@ export class GrowableArray {
   }
 }
 
-const broadcastTags = {
-  tick: 0,
-};
-const byteToBroadcastTag = new Map();
-for (const [key, value] of Object.entries(broadcastTags)) {
-  byteToBroadcastTag.set(value, key);
+/**
+ * @type {BroadcastTag[]}
+ */
+const broadcastTags = ['broadcast-tick'];
+/** @type {Map<BroadcastTag, number>}  */
+const broadcastTagToIndex = new Map();
+for (let tagIndex = 0; tagIndex < broadcastTags.length; tagIndex++) {
+  broadcastTagToIndex.set(broadcastTags[tagIndex], tagIndex);
 }
 
 /**
@@ -130,10 +136,10 @@ export class BinaryWriter {
   /**
    * This tags the message type so the client can know how to process the message.
    *
-   * @param {keyof typeof broadcastTags} tag
+   * @param {BroadcastTag} tag
    */
   writeTag(tag) {
-    this.writeByte(broadcastTags[tag]);
+    this.writeByte(ensureExists(broadcastTagToIndex.get(tag)));
   }
 
   /** @param {number} byte */
@@ -203,11 +209,11 @@ export class BinaryReader {
   /**
    * This tags the message type so the client can know how to process the message.
    *
-   * @returns {keyof typeof broadcastTags}
+   * @returns {BroadcastTag}
    */
   readTag() {
     const number = this.readByte();
-    const tag = byteToBroadcastTag.get(number);
+    const tag = broadcastTags[number];
     if (!tag) {
       throw new Error('Unable to find a tag given the byte: ' + number);
     }
@@ -291,4 +297,37 @@ export function doOnce(name, fn) {
   }
   fn();
   hasRunOnce[name] = true;
+}
+
+{
+  // Test that this system is big endian.
+  const uint16 = new Uint16Array(1);
+  uint16[0] = 0xaabb;
+  const uint8 = new Uint8Array(uint16.buffer);
+  if (uint8[0] !== 0xbb) {
+    throw new Error(
+      'The binary messaging system assumes big endian. Little endian support needs to ' +
+        'be added to support this system.'
+    );
+  }
+}
+
+/**
+ * @template T
+ * @param {T | null | undefined} item
+ * @param {string} [message]
+ * @returns {T}
+ */
+export function ensureExists(item, message) {
+  if (item === null) {
+    throw new Error(
+      message || 'Attempted to get a value assumed non-null, but it was null.'
+    );
+  }
+  if (item === undefined) {
+    throw new Error(
+      message || 'Attempted to get a defined value, but it was undefined.'
+    );
+  }
+  return item;
 }

@@ -517,16 +517,18 @@ socket.addEventListener('message', (event) => {
   }
 });
 
+let players = [];
+setDebugGlobal('players', players);
 /**
  * @param {any} data - TODO
  */
 function readMessage(data) {
   const binary = new BinaryReader(new Uint8Array(data));
   switch (binary.readTag()) {
-    case 'tick':
+    case 'broadcast-tick':
       {
         const playerCount = binary.readUint16();
-        const players = [];
+        players.length = 0;
         for (let i = 0; i < playerCount; i++) {
           players.push({
             generation: binary.readUint32(),
