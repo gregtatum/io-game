@@ -1,10 +1,11 @@
+import { BinaryReader, doOnce } from './shared/utils.js';
 // @ts-check
 
 /**
+ * @typedef {import("types").ServerPlayer} ServerPlayer
+ * @typedef {import("types").ServerToClient} ServerToClient
+ * @typedef {import("types").ClientToServer} ClientToServer
  * @typedef {import("types").Direction} Direction
- */
-
-/**
  * @typedef {Phaser.Math.Vector2} Vector2
  */
 
@@ -491,3 +492,54 @@ export const game = new Phaser.Game({
 
 setDebugGlobal('game', game);
 setDebugGlobal('game', game);
+
+const socket = new WebSocket('ws://127.0.0.1:8080');
+
+socket.addEventListener('close', (event) => {
+  console.log('WebSocket closed', event);
+});
+
+socket.addEventListener('error', (event) => {
+  console.error(event);
+});
+
+socket.addEventListener('open', () => {
+  console.log('open');
+  socket.send('"Hello Server!"');
+});
+
+socket.addEventListener('message', (event) => {
+  const { data } = event;
+  if (typeof data === 'string') {
+    console.log(`!!! got a message`, JSON.parse(data));
+  } else {
+    data.arrayBuffer().then(readMessage);
+  }
+});
+
+/**
+ * @param {any} data - TODO
+ */
+function readMessage(data) {
+  const binary = new BinaryReader(new Uint8Array(data));
+  switch (binary.readTag()) {
+    case 'tick':
+      {
+        const playerCount = binary.readUint16();
+        const players = [];
+        for (let i = 0; i < playerCount; i++) {
+          players.push({
+            generation: binary.readUint32(),
+            positionX: binary.readFloat64(),
+            positionY: binary.readFloat64(),
+          });
+        }
+        doOnce('logPlayers', () => {
+          console.log(`!!! players`, players);
+        });
+      }
+      break;
+    default:
+      throw new Error('Unknown broadcast tag.');
+  }
+}

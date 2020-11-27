@@ -1,5 +1,6 @@
 // @ts-check
 import WebSocket from 'ws';
+import { BinaryWriter } from '../client/shared/utils.js';
 const WEBSOCKET_PORT = 8080;
 
 /**
@@ -12,6 +13,8 @@ let lastPlayerGeneration = 0;
 
 /** @type {Map<number, ServerPlayer>} */
 const players = new Map();
+
+const binaryWriter = new BinaryWriter();
 
 export function startWebsocketStart() {
   const server = new WebSocket.Server({
@@ -36,9 +39,7 @@ function createNewPlayer(socket) {
   const player = {
     socket,
     generation,
-    broadcast: {
-      position: { x: 0, y: 0 },
-    },
+    position: { x: 0, y: 0 },
   };
 
   players.set(generation, player);
@@ -66,33 +67,53 @@ function handleWebSocketConnection(socket) {
         return;
       }
     } catch (error) {
-      console.error('Unable to parse the JSON of  maessage', error);
+      console.error(messageRaw);
+      console.error('Unable to parse the JSON of message', error);
+      return;
     }
     handleMessage(json, player);
   });
 
   socket.send(JSON.stringify({ message: 'message from server' }));
 
+  const intervalId = setInterval(broadcastTick, 32);
+
   socket.on('close', () => {
     players.delete(player.generation);
+    clearInterval(intervalId);
   });
 }
 
 /**
- * @param {ClientToServer} message
- * @param {ServerPlayer} _player
+ * Broadcast all of the relevant information in a "tick". This utility sends
+ * the information in a binary serialized format to make it efficient.
  */
-function handleMessage(message, _player) {
+function broadcastTick() {
+  binaryWriter.writeTag('tick');
+  binaryWriter.writeUint16(players.size);
+
+  for (const player of players.values()) {
+    binaryWriter.writeUint32(player.generation);
+    binaryWriter.writeFloat64(player.position.x);
+    binaryWriter.writeFloat64(player.position.y);
+  }
+  for (const player of players.values()) {
+    player.socket.send(binaryWriter.finalize());
+  }
+}
+
+/**
+ * @param {ClientToServer} message
+ * @param {ServerPlayer} player
+ */
+function handleMessage(message, player) {
   switch (message.type) {
     case 'tick': {
       const { x, y } = message;
+      player.position.x = x;
+      player.position.y = y;
       break;
     }
     default:
   }
 }
-
-/**
- * @param {ServerToClient} message
- */
-function broadcast(message) {}

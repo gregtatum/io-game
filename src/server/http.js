@@ -1,13 +1,14 @@
 // @ts-check
 import handler from 'serve-handler';
 import http from 'http';
+import { join } from 'path';
 
 const HTTP_PORT = 8000;
 
 export function startHttpServer() {
   const server = http.createServer((request, response) => {
     return handler(request, response, {
-      public: 'client',
+      public: join('src/client'),
     });
   });
 
