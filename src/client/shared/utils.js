@@ -96,8 +96,8 @@ class ByteAccessor {
    */
   read(buffer, byteOffset) {
     // Copy the bytes to the local ArrayBuffer.
-    for (let i = byteOffset; i < this.bytes.length; i++) {
-      this.bytes[i] = buffer[i];
+    for (let i = 0; i < this.bytes.length; i++) {
+      this.bytes[i] = buffer[i + byteOffset];
     }
     return this.array[0];
   }
