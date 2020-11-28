@@ -56,7 +56,7 @@ export class GrowableArray {
 /**
  * @type {BroadcastTag[]}
  */
-const broadcastTags = ['broadcast-tick'];
+const broadcastTags = ['broadcast-tick', 'player-update'];
 /** @type {Map<BroadcastTag, number>}  */
 const broadcastTagToIndex = new Map();
 for (let tagIndex = 0; tagIndex < broadcastTags.length; tagIndex++) {
@@ -190,7 +190,7 @@ export class BinaryWriter {
 
 export class BinaryReader {
   /**
-   * @param {Uint8Array} buffer
+   * @param {Uint8Array | Buffer} buffer
    */
   constructor(buffer) {
     /** @private */

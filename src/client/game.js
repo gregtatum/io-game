@@ -1,4 +1,4 @@
-import { BinaryReader, doOnce } from './shared/utils.js';
+import { BinaryReader, BinaryWriter, doOnce } from './shared/utils.js';
 // @ts-check
 
 /**
@@ -6,7 +6,138 @@ import { BinaryReader, doOnce } from './shared/utils.js';
  * @typedef {import("types").ServerToClient} ServerToClient
  * @typedef {import("types").ClientToServer} ClientToServer
  * @typedef {import("types").Direction} Direction
+ * @typedef {import("types").State} State
  * @typedef {Phaser.Math.Vector2} Vector2
+ */
+
+const CANVAS_WIDTH = 720;
+const CANVAS_HEIGHT = 528;
+const TILE_SIZE = 48;
+
+getInitialState();
+
+/**
+ * @returns {Promise<State>}
+ */
+async function getInitialState() {
+  const { resolve, promise: createPromise } = createDeferredPromise();
+
+  /** @type {Phaser.Game} */
+  const game = new Phaser.Game({
+    title: 'IO Game',
+    render: {
+      antialias: false,
+    },
+    type: Phaser.AUTO,
+    scene: {
+      active: false,
+      visible: false,
+      key: 'Game',
+      create: resolve,
+      preload: () => preload(game.scene.scenes[0]),
+      update: (time, delta) => update(state, time, delta),
+    },
+    scale: {
+      width: CANVAS_WIDTH,
+      height: CANVAS_HEIGHT,
+      autoCenter: Phaser.Scale.CENTER_BOTH,
+    },
+    backgroundColor: '#48C4F8',
+  });
+
+  await createPromise;
+
+  const scene = game.scene.scenes[0];
+  const tilemap = setupTilemap(scene);
+  const player = setupPlayer(scene);
+  const gridPhysics = new GridPhysics(player, tilemap);
+  const gridControls = new GridControls(scene.input, gridPhysics);
+
+  /** @type {State} */
+  const state = {
+    game,
+    scene,
+    player,
+    tilemap,
+    gridPhysics,
+    gridControls,
+    others: new Map(),
+  };
+
+  setDebugGlobal('state', state);
+
+  return state;
+}
+
+/**
+ * @returns {{ promise: Promise<void>, resolve: () => void }}
+ */
+function createDeferredPromise() {
+  /** @type {() => void} */
+  let resolve;
+  const promise = new Promise((r) => {
+    resolve = r;
+  });
+  // @ts-ignore - This is actually being assigned.
+  return { promise, resolve };
+}
+
+/**
+ * @param {Phaser.Scene} scene
+ * @returns {Player}
+ */
+function setupPlayer(scene) {
+  const playerSprite = scene.add.sprite(0, 0, 'player');
+  playerSprite.setDepth(2);
+  scene.cameras.main.startFollow(playerSprite);
+
+  return new Player(playerSprite, 6, 8, 8);
+}
+
+/**
+ * @param {Phaser.Scene} scene
+ * @returns {Phaser.Tilemaps.Tilemap}
+ */
+function setupTilemap(scene) {
+  const tilemap = scene.make.tilemap({ key: 'cloud-city-map' });
+  tilemap.addTilesetImage('Cloud City', 'tiles');
+  for (let i = 0; i < tilemap.layers.length; i++) {
+    const layer = tilemap.createStaticLayer(i, 'Cloud City', 0, 0);
+    layer.setDepth(i);
+    layer.scale = 3;
+  }
+  return tilemap;
+}
+
+/**
+ * @param {State} state,
+ * @param {number} _time
+ * @param {number} delta
+ */
+function update(state, _time, delta) {
+  const { gridControls, gridPhysics, player } = state;
+  if (!gridControls || !gridPhysics || !player) {
+    throw new Error("Game isn't properly initialized.");
+  }
+  gridControls.update();
+  gridPhysics.update(delta);
+  sendPlayerUpdate(player);
+}
+
+/**
+ * @param {Phaser.Scene} scene
+ */
+function preload(scene) {
+  scene.load.image('tiles', 'assets/cloud_tileset.png');
+  scene.load.tilemapTiledJSON('cloud-city-map', 'assets/cloud_city.json');
+  scene.load.spritesheet('player', 'assets/characters.png', {
+    frameWidth: Player.SPRITE_FRAME_WIDTH,
+    frameHeight: Player.SPRITE_FRAME_HEIGHT,
+  });
+}
+
+/**
+ * @typedef {ReturnType<typeof getInitialState>}
  */
 
 /**
@@ -18,6 +149,34 @@ function setDebugGlobal(key, value) {
   // @ts-ignore
   window[key] = value;
 }
+
+const socket = new WebSocket('ws://127.0.0.1:8080');
+
+socket.addEventListener('close', (event) => {
+  console.log('WebSocket closed', event);
+});
+
+socket.addEventListener('error', (event) => {
+  console.error(event);
+});
+
+socket.addEventListener('open', () => {
+  console.log('open');
+  socket.send('"Hello Server!"');
+});
+
+socket.addEventListener(
+  'message',
+  /** @param {MessageEvent<Blob | string>} event */
+  (event) => {
+    const { data } = event;
+    if (typeof data === 'string') {
+      readJsonMessage(JSON.parse(data));
+    } else {
+      data.arrayBuffer().then(readBinaryMessage);
+    }
+  }
+);
 
 /** @type {{[key: string]: Phaser.Math.Vector2}} */
 const movementDirectionVectors = {
@@ -57,7 +216,7 @@ export class GridPhysics {
   /** @type {Direction} */
   movementDirection = 'none';
   /** @type {number} */
-  speedPixelsPerSecond = GameScene.TILE_SIZE * 4;
+  speedPixelsPerSecond = TILE_SIZE * 4;
   /** @type {number} */
   tileSizePixelsWalked = 0;
   decimalPlacesLeft = 0;
@@ -144,7 +303,10 @@ export class GridPhysics {
    * @returns {boolean}
    */
   hasBlockingTile(pos) {
-    if (this.hasNoTile(pos)) return true;
+    if (this.hasNoTile(pos)) {
+      return true;
+    }
+
     return this.tileMap.layers.some((layer) => {
       const tile = this.tileMap.getTileAt(pos.x, pos.y, false, layer.name);
       return tile && tile.properties.collides;
@@ -200,16 +362,14 @@ export class GridPhysics {
    * @returns {boolean}
    */
   willCrossTileBorderThisUpdate(pixelsToWalkThisUpdate) {
-    return (
-      this.tileSizePixelsWalked + pixelsToWalkThisUpdate >= GameScene.TILE_SIZE
-    );
+    return this.tileSizePixelsWalked + pixelsToWalkThisUpdate >= TILE_SIZE;
   }
 
   /**
    * @returns {void}
    */
   movePlayerSpriteRestOfTile() {
-    this.movePlayerSprite(GameScene.TILE_SIZE - this.tileSizePixelsWalked);
+    this.movePlayerSprite(TILE_SIZE - this.tileSizePixelsWalked);
     this.stopMoving();
   }
 
@@ -224,7 +384,7 @@ export class GridPhysics {
     this.player.setPosition(newPlayerPos);
     this.tileSizePixelsWalked += speed;
     this.updatePlayerFrame(this.movementDirection, this.tileSizePixelsWalked);
-    this.tileSizePixelsWalked %= GameScene.TILE_SIZE;
+    this.tileSizePixelsWalked %= TILE_SIZE;
   }
 
   /**
@@ -245,7 +405,7 @@ export class GridPhysics {
    * @returns {boolean}
    */
   hasWalkedHalfATile(tileSizePixelsWalked) {
-    return tileSizePixelsWalked > GameScene.TILE_SIZE / 2;
+    return tileSizePixelsWalked > TILE_SIZE / 2;
   }
 
   /**
@@ -304,15 +464,13 @@ export class Player {
     this.characterIndex = characterIndex;
     this.sprite.scale = Player.SCALE_FACTOR;
     this.sprite.setPosition(
-      startTilePosX * GameScene.TILE_SIZE + this.playerOffsetX(),
-      startTilePosY * GameScene.TILE_SIZE + this.playerOffsetY()
+      startTilePosX * TILE_SIZE + this.playerOffsetX(),
+      startTilePosY * TILE_SIZE + this.playerOffsetY()
     );
     this.sprite.setFrame(this.framesOfDirection('down').standing);
   }
 
-  /**
-   * @returns {Vector2}
-   */
+  /** @returns {Vector2} */
   getPosition() {
     return this.sprite.getCenter();
   }
@@ -351,10 +509,8 @@ export class Player {
    * @returns {Phaser.Math.Vector2}
    */
   getTilePos() {
-    const x =
-      (this.sprite.getCenter().x - this.playerOffsetX()) / GameScene.TILE_SIZE;
-    const y =
-      (this.sprite.getCenter().y - this.playerOffsetY()) / GameScene.TILE_SIZE;
+    const x = (this.sprite.getCenter().x - this.playerOffsetX()) / TILE_SIZE;
+    const y = (this.sprite.getCenter().y - this.playerOffsetY()) / TILE_SIZE;
     return new Phaser.Math.Vector2(Math.floor(x), Math.floor(y));
   }
 
@@ -373,7 +529,7 @@ export class Player {
    * @returns {number}
    */
   playerOffsetX() {
-    return GameScene.TILE_SIZE / 2;
+    return TILE_SIZE / 2;
   }
 
   /**
@@ -381,10 +537,7 @@ export class Player {
    */
   playerOffsetY() {
     return (
-      -(
-        (Player.SPRITE_FRAME_HEIGHT * Player.SCALE_FACTOR) %
-        GameScene.TILE_SIZE
-      ) / 2
+      -((Player.SPRITE_FRAME_HEIGHT * Player.SCALE_FACTOR) % TILE_SIZE) / 2
     );
   }
 
@@ -411,118 +564,155 @@ export class Player {
   }
 }
 
-export class GameScene extends Phaser.Scene {
-  static CANVAS_WIDTH = 720;
-  static CANVAS_HEIGHT = 528;
+export class OtherPlayer {
+  static SPRITE_FRAME_WIDTH = 52;
+  static SPRITE_FRAME_HEIGHT = 72;
+  static SCALE_FACTOR = 1.5;
 
-  static TILE_SIZE = 48;
+  static CHARS_IN_ROW = 4;
+  static FRAMES_PER_CHAR_ROW = 3;
+  static FRAMES_PER_CHAR_COL = 4;
 
-  /** @type {GridControls | undefined} */
-  gridControls;
-  /** @type {GridPhysics | undefined} */
-  gridPhysics;
+  /** @type {{ [key in Direction]?: number }} */
+  directionToFrameRow = {
+    ['down']: 0,
+    ['left']: 1,
+    ['right']: 2,
+    ['up']: 3,
+  };
+  lastFootLeft = false;
 
-  constructor() {
-    super({
-      active: false,
-      visible: false,
-      key: 'Game',
-    });
+  /**
+   * @param {Phaser.GameObjects.Sprite} sprite
+   * @param {number} characterIndex
+   * @param {number} startTilePosX
+   * @param {number} startTilePosY
+   */
+  constructor(sprite, characterIndex, startTilePosX, startTilePosY) {
+    this.sprite = sprite;
+    this.characterIndex = characterIndex;
+    this.sprite.scale = Player.SCALE_FACTOR;
+    this.sprite.setPosition(
+      startTilePosX * TILE_SIZE + this.playerOffsetX(),
+      startTilePosY * TILE_SIZE + this.playerOffsetY()
+    );
+    this.sprite.setFrame(this.framesOfDirection('down').standing);
   }
 
-  create() {
-    const cloudCityTilemap = this.make.tilemap({ key: 'cloud-city-map' });
-    cloudCityTilemap.addTilesetImage('Cloud City', 'tiles');
-    for (let i = 0; i < cloudCityTilemap.layers.length; i++) {
-      const layer = cloudCityTilemap.createStaticLayer(i, 'Cloud City', 0, 0);
-      layer.setDepth(i);
-      layer.scale = 3;
-    }
-
-    const playerSprite = this.add.sprite(0, 0, 'player');
-    playerSprite.setDepth(2);
-
-    this.cameras.main.startFollow(playerSprite);
-
-    const player = new Player(playerSprite, 6, 8, 8);
-    setDebugGlobal('player', player);
-    this.gridPhysics = new GridPhysics(player, cloudCityTilemap);
-    this.gridControls = new GridControls(this.input, this.gridPhysics);
+  /** @returns {Vector2} */
+  getPosition() {
+    return this.sprite.getCenter();
   }
 
   /**
-   * @param {number} _time
-   * @param {number} delta
+   * @param {Vector2} position
+   * @returns {void}
    */
-  update(_time, delta) {
-    const { gridControls, gridPhysics } = this;
-    if (!gridControls || !gridPhysics) {
-      throw new Error("Game isn't properly initialized.");
-    }
-    gridControls.update();
-    gridPhysics.update(delta);
+  setPosition(position) {
+    this.sprite.setPosition(position.x, position.y);
   }
 
-  preload() {
-    this.load.image('tiles', 'assets/cloud_tileset.png');
-    this.load.tilemapTiledJSON('cloud-city-map', 'assets/cloud_city.json');
-    this.load.spritesheet('player', 'assets/characters.png', {
-      frameWidth: Player.SPRITE_FRAME_WIDTH,
-      frameHeight: Player.SPRITE_FRAME_HEIGHT,
-    });
+  /**
+   * @param {Direction} direction
+   * @returns {void}
+   */
+  setWalkingFrame(direction) {
+    const frameRow = this.framesOfDirection(direction);
+    this.sprite.setFrame(
+      this.lastFootLeft ? frameRow.rightFoot : frameRow.leftFoot
+    );
+  }
+
+  /**
+   * @param {Direction} direction
+   * @returns {void}
+   */
+  setStandingFrame(direction) {
+    if (this.isCurrentFrameStanding(direction)) {
+      this.lastFootLeft = !this.lastFootLeft;
+    }
+    this.sprite.setFrame(this.framesOfDirection(direction).standing);
+  }
+
+  /**
+   * @returns {Phaser.Math.Vector2}
+   */
+  getTilePos() {
+    const x = (this.sprite.getCenter().x - this.playerOffsetX()) / TILE_SIZE;
+    const y = (this.sprite.getCenter().y - this.playerOffsetY()) / TILE_SIZE;
+    return new Phaser.Math.Vector2(Math.floor(x), Math.floor(y));
+  }
+
+  /**
+   * @param {Direction} direction
+   * @returns {boolean}
+   */
+  isCurrentFrameStanding(direction) {
+    return (
+      Number(this.sprite.frame.name) !=
+      this.framesOfDirection(direction).standing
+    );
+  }
+
+  /**
+   * @returns {number}
+   */
+  playerOffsetX() {
+    return TILE_SIZE / 2;
+  }
+
+  /**
+   * @returns {number}
+   */
+  playerOffsetY() {
+    return (
+      -((Player.SPRITE_FRAME_HEIGHT * Player.SCALE_FACTOR) % TILE_SIZE) / 2
+    );
+  }
+
+  /**
+   * @param {Direction} direction
+   * @returns {FrameRow}
+   */
+  framesOfDirection(direction) {
+    const playerCharRow = Math.floor(this.characterIndex / Player.CHARS_IN_ROW);
+    const playerCharCol = this.characterIndex % Player.CHARS_IN_ROW;
+    const framesInRow = Player.CHARS_IN_ROW * Player.FRAMES_PER_CHAR_ROW;
+    const framesInSameRowBefore = Player.FRAMES_PER_CHAR_ROW * playerCharCol;
+    const dir = this.directionToFrameRow[direction];
+    if (dir === undefined) {
+      throw new Error('Could not find the direction.');
+    }
+    const rows = dir + playerCharRow * Player.FRAMES_PER_CHAR_COL;
+    const startFrame = framesInSameRowBefore + rows * framesInRow;
+    return {
+      leftFoot: startFrame,
+      standing: startFrame + 1,
+      rightFoot: startFrame + 2,
+    };
   }
 }
 
-export const game = new Phaser.Game({
-  title: 'Sample',
-  render: {
-    antialias: false,
-  },
-  type: Phaser.AUTO,
-  scene: GameScene,
-  scale: {
-    width: GameScene.CANVAS_WIDTH,
-    height: GameScene.CANVAS_HEIGHT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-  },
+const binaryWriter = new BinaryWriter();
 
-  parent: 'game',
-  backgroundColor: '#48C4F8',
-});
-
-setDebugGlobal('game', game);
-setDebugGlobal('game', game);
-
-const socket = new WebSocket('ws://127.0.0.1:8080');
-
-socket.addEventListener('close', (event) => {
-  console.log('WebSocket closed', event);
-});
-
-socket.addEventListener('error', (event) => {
-  console.error(event);
-});
-
-socket.addEventListener('open', () => {
-  console.log('open');
-  socket.send('"Hello Server!"');
-});
-
-socket.addEventListener('message', (event) => {
-  const { data } = event;
-  if (typeof data === 'string') {
-    console.log(`!!! got a message`, JSON.parse(data));
-  } else {
-    data.arrayBuffer().then(readMessage);
-  }
-});
+/**
+ * @param {Player} player
+ */
+function sendPlayerUpdate(player) {
+  const { x, y } = player.getPosition();
+  binaryWriter.writeTag('player-update');
+  binaryWriter.writeFloat64(x);
+  binaryWriter.writeFloat64(y);
+  socket.send(binaryWriter.finalize());
+}
 
 let players = [];
 setDebugGlobal('players', players);
+
 /**
- * @param {any} data - TODO
+ * @param {ArrayBuffer} data
  */
-function readMessage(data) {
+function readBinaryMessage(data) {
   const binary = new BinaryReader(new Uint8Array(data));
   switch (binary.readTag()) {
     case 'broadcast-tick':
@@ -543,5 +733,20 @@ function readMessage(data) {
       break;
     default:
       throw new Error('Unknown broadcast tag.');
+  }
+}
+
+/**
+ * @param {ServerToClient} message
+ */
+function readJsonMessage(message) {
+  switch (message.type) {
+    case 'hello':
+      {
+        const { generation } = message;
+        console.log(`!!! generation`, generation);
+      }
+      break;
+    default:
   }
 }

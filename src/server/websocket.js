@@ -1,6 +1,6 @@
 // @ts-check
 import WebSocket from 'ws';
-import { BinaryWriter } from '../client/shared/utils.js';
+import { BinaryWriter, BinaryReader } from '../client/shared/utils.js';
 const WEBSOCKET_PORT = 8080;
 
 /**
@@ -35,11 +35,19 @@ export function startWebsocketStart() {
 function createNewPlayer(socket) {
   const generation = lastPlayerGeneration++;
 
+  /**
+   * @param {ServerToClient} message
+   */
+  function sendMessage(message) {
+    socket.send(JSON.stringify(message));
+  }
+
   /** @type {ServerPlayer} */
   const player = {
     socket,
     generation,
     position: { x: 0, y: 0 },
+    sendMessage,
   };
 
   players.set(generation, player);
@@ -57,8 +65,13 @@ function handleWebSocketConnection(socket) {
   const player = createNewPlayer(socket);
 
   socket.on('message', (messageRaw) => {
+    if (messageRaw instanceof Buffer) {
+      /** @type {Buffer} */
+      handleBinaryMessage(messageRaw, player);
+      return;
+    }
     if (typeof messageRaw !== 'string') {
-      console.error('Unknown message', messageRaw);
+      console.error('Received an unknown message');
       return;
     }
     /** @type {any} */
@@ -74,10 +87,13 @@ function handleWebSocketConnection(socket) {
       console.error('Unable to parse the JSON of message', error);
       return;
     }
-    handleMessage(json, player);
+    handleJsonMessage(json, player);
   });
 
-  socket.send(JSON.stringify({ message: 'message from server' }));
+  player.sendMessage({
+    type: 'hello',
+    generation: player.generation,
+  });
 
   if (players.size === 1) {
     // Start up the broadcast loop.
@@ -117,7 +133,7 @@ function broadcastTick() {
  * @param {ClientToServer} message
  * @param {ServerPlayer} player
  */
-function handleMessage(message, player) {
+function handleJsonMessage(message, player) {
   switch (message.type) {
     case 'tick': {
       const { x, y } = message;
@@ -126,5 +142,23 @@ function handleMessage(message, player) {
       break;
     }
     default:
+  }
+}
+
+/**
+ * @param {Buffer} buffer
+ * @param {ServerPlayer} player
+ */
+function handleBinaryMessage(buffer, player) {
+  const reader = new BinaryReader(buffer);
+  const tag = reader.readTag();
+  switch (tag) {
+    case 'player-update': {
+      player.position.x = reader.readFloat64();
+      player.position.y = reader.readFloat64();
+      break;
+    }
+    default:
+      console.error('Unhandled tag', tag);
   }
 }
