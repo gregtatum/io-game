@@ -1,17 +1,36 @@
-import WebSocket from 'ws';
-import { Player, OtherPlayer, GridControls, GridPhysics } from '../client/game';
+import WebSocketServer from 'ws';
+import { Player, GridControls, GridPhysics } from '../client/game';
 
 export type PlayerGeneration = number;
 
 export type SimpleVector2 = { x: number, y: number };
 
+export type OtherPlayerSerialized = {
+  generation: PlayerGeneration,
+  x: number,
+  y: number
+}
+
 export type ServerToClient =
-  | { type: 'hello', generation: PlayerGeneration };
+  | {
+      type: 'hello',
+      generation: PlayerGeneration,
+      others: OtherPlayerSerialized[]
+    }
+  | {
+      type: 'other-joined',
+      other: OtherPlayerSerialized
+    }
+  | {
+      type: 'other-left',
+      generation: PlayerGeneration
+    };
 
 export interface ServerPlayer {
-  socket: WebSocket,
+  socket: WebSocketServer,
   generation: PlayerGeneration,
   position: SimpleVector2;
+  tickGeneration: number,
   sendMessage(message: ServerToClient): void;
 }
 
@@ -42,12 +61,23 @@ export type TypedArray =
 
 export type DataViewConstructor = typeof DataView;
 
+export interface OtherPlayer {
+  generation: PlayerGeneration,
+  x: number,
+  y: number,
+  sprite: Phaser.GameObjects.Sprite
+}
+
 export interface State {
+  socket: WebSocket | null;
+  generation: PlayerGeneration | null,
   game: Phaser.Game;
-  scene: Phaser.Scenes.SceneManager;
+  scene: Phaser.Scene;
   player: Player;
   tilemap: Phaser.Tilemaps.Tilemap;
   others: Map<number, OtherPlayer>;
   gridControls: GridControls;
   gridPhysics: GridPhysics;
 }
+
+export type Selector<T> = (state: State) => T;

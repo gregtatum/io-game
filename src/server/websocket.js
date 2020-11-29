@@ -9,7 +9,10 @@ const WEBSOCKET_PORT = 8080;
  * @typedef {import("types").ClientToServer} ClientToServer
  */
 
-let lastPlayerGeneration = 0;
+const generations = {
+  player: 0,
+  tick: 0,
+};
 
 /** @type {Map<number, ServerPlayer>} */
 const players = new Map();
@@ -33,7 +36,7 @@ export function startWebsocketStart() {
  * @returns {ServerPlayer}
  */
 function createNewPlayer(socket) {
-  const generation = lastPlayerGeneration++;
+  const generation = generations.player++;
 
   /**
    * @param {ServerToClient} message
@@ -47,6 +50,7 @@ function createNewPlayer(socket) {
     socket,
     generation,
     position: { x: 0, y: 0 },
+    tickGeneration: 0,
     sendMessage,
   };
 
@@ -62,6 +66,10 @@ let intervalId;
  * @param {WebSocket} socket
  */
 function handleWebSocketConnection(socket) {
+  const others = [];
+  for (const { generation, position } of players.values()) {
+    others.push({ generation, x: position.x, y: position.y });
+  }
   const player = createNewPlayer(socket);
 
   socket.on('message', (messageRaw) => {
@@ -90,18 +98,36 @@ function handleWebSocketConnection(socket) {
     handleJsonMessage(json, player);
   });
 
+  console.log('New player connected', player.generation);
+
   player.sendMessage({
     type: 'hello',
     generation: player.generation,
+    others,
+  });
+
+  broadcastJson({
+    type: 'other-joined',
+    other: {
+      x: 0,
+      y: 0,
+      generation: player.generation,
+    },
   });
 
   if (players.size === 1) {
     // Start up the broadcast loop.
-    intervalId = setInterval(broadcastTick, 1000);
+    intervalId = setInterval(broadcastBinaryTick, 16.6666);
   }
 
   socket.on('close', () => {
+    console.log('Player disconnected', player.generation);
     players.delete(player.generation);
+
+    broadcastJson({
+      type: 'other-left',
+      generation: player.generation,
+    });
 
     if (players.size === 0) {
       // Don't do a broadcast loop if there are no players.
@@ -114,11 +140,25 @@ function handleWebSocketConnection(socket) {
  * Broadcast all of the relevant information in a "tick". This utility sends
  * the information in a binary serialized format to make it efficient.
  */
-function broadcastTick() {
-  binaryWriter.writeTag('broadcast-tick');
-  binaryWriter.writeUint16(players.size);
-
+function broadcastBinaryTick() {
+  // Determine which players to send updates for.
+  const tickGeneration = generations.tick;
+  const playersToUpdate = [];
   for (const player of players.values()) {
+    if (player.tickGeneration === tickGeneration) {
+      playersToUpdate.push(player);
+    }
+  }
+
+  if (playersToUpdate.length === 0) {
+    return;
+  }
+
+  // Only write
+  binaryWriter.writeTag('broadcast-tick');
+  binaryWriter.writeUint16(playersToUpdate.length);
+
+  for (const player of playersToUpdate) {
     binaryWriter.writeUint32(player.generation);
     binaryWriter.writeFloat64(player.position.x);
     binaryWriter.writeFloat64(player.position.y);
@@ -126,6 +166,19 @@ function broadcastTick() {
   const buffer = binaryWriter.finalize();
   for (const player of players.values()) {
     player.socket.send(buffer);
+  }
+  generations.tick++;
+}
+
+/**
+ * Broadcast all of the relevant information in a "tick". This utility sends
+ * the information in a binary serialized format to make it efficient.
+ * @param {ServerToClient} message
+ */
+function broadcastJson(message) {
+  const string = JSON.stringify(message);
+  for (const player of players.values()) {
+    player.socket.send(string);
   }
 }
 
@@ -156,6 +209,7 @@ function handleBinaryMessage(buffer, player) {
     case 'player-update': {
       player.position.x = reader.readFloat64();
       player.position.y = reader.readFloat64();
+      player.tickGeneration = generations.tick;
       break;
     }
     default:

@@ -331,3 +331,22 @@ export function ensureExists(item, message) {
   }
   return item;
 }
+
+/**
+ * @param {string} key
+ * @param {unknown} value
+ */
+export function setDebugGlobal(key, value) {
+  console.log('Global: ' + key);
+  // @ts-ignore
+  window[key] = value;
+}
+
+/**
+ * @param {number} a
+ * @param {number} b
+ * @param {number} t
+ */
+export function lerp(a, b, t) {
+  return a * (1 - t) + b * t;
+}

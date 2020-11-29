@@ -1,18 +1,35 @@
-import { BinaryReader, BinaryWriter, doOnce } from './shared/utils.js';
 // @ts-check
+import {
+  BinaryReader,
+  BinaryWriter,
+  setDebugGlobal,
+  lerp,
+  ensureExists,
+} from './shared/utils.js';
+import { $ } from './selectors.js';
 
 /**
+ * @typedef {Phaser.Math.Vector2} Vector2
  * @typedef {import("types").ServerPlayer} ServerPlayer
  * @typedef {import("types").ServerToClient} ServerToClient
  * @typedef {import("types").ClientToServer} ClientToServer
  * @typedef {import("types").Direction} Direction
  * @typedef {import("types").State} State
- * @typedef {Phaser.Math.Vector2} Vector2
+ * @typedef {import('types').OtherPlayer} OtherPlayer
  */
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 528;
 const TILE_SIZE = 48;
+const PLAYER_SPRITE_FRAME_WIDTH = 52;
+const PLAYER_SPRITE_FRAME_HEIGHT = 72;
+const PLAYER_SCALE_FACTOR = 1.5;
+const PLAYER_CHARS_IN_ROW = 4;
+const PLAYER_FRAMES_PER_CHAR_ROW = 3;
+const PLAYER_FRAMES_PER_CHAR_COL = 4;
+const PLAYER_OFFSET_X = TILE_SIZE / 2;
+const PLAYER_OFFSET_Y =
+  -((PLAYER_SPRITE_FRAME_HEIGHT * PLAYER_SCALE_FACTOR) % TILE_SIZE) / 2;
 
 getInitialState();
 
@@ -35,7 +52,6 @@ async function getInitialState() {
       key: 'Game',
       create: resolve,
       preload: () => preload(game.scene.scenes[0]),
-      update: (time, delta) => update(state, time, delta),
     },
     scale: {
       width: CANVAS_WIDTH,
@@ -47,6 +63,7 @@ async function getInitialState() {
 
   await createPromise;
 
+  /** @type {Phaser.Scene} */
   const scene = game.scene.scenes[0];
   const tilemap = setupTilemap(scene);
   const player = setupPlayer(scene);
@@ -55,6 +72,8 @@ async function getInitialState() {
 
   /** @type {State} */
   const state = {
+    socket: null,
+    generation: null,
     game,
     scene,
     player,
@@ -64,7 +83,19 @@ async function getInitialState() {
     others: new Map(),
   };
 
+  startWebSocket(state);
   setDebugGlobal('state', state);
+
+  scene.events.on(
+    'update',
+    /**
+     * @param {number} time
+     * @param {number} delta
+     */
+    (time, delta) => {
+      update(state, time, delta);
+    }
+  );
 
   return state;
 }
@@ -84,14 +115,24 @@ function createDeferredPromise() {
 
 /**
  * @param {Phaser.Scene} scene
+ * @returns {Phaser.GameObjects.Sprite}
+ */
+function addSprite(scene) {
+  const sprite = scene.add.sprite(0, 0, 'player');
+  sprite.setDepth(2);
+  sprite.scale = PLAYER_SCALE_FACTOR;
+  return sprite;
+}
+
+/**
+ * @param {Phaser.Scene} scene
  * @returns {Player}
  */
 function setupPlayer(scene) {
-  const playerSprite = scene.add.sprite(0, 0, 'player');
-  playerSprite.setDepth(2);
-  scene.cameras.main.startFollow(playerSprite);
+  const sprite = addSprite(scene);
+  scene.cameras.main.startFollow(sprite);
 
-  return new Player(playerSprite, 6, 8, 8);
+  return new Player(sprite, 6, 8, 8);
 }
 
 /**
@@ -115,13 +156,17 @@ function setupTilemap(scene) {
  * @param {number} delta
  */
 function update(state, _time, delta) {
-  const { gridControls, gridPhysics, player } = state;
+  const { gridControls, gridPhysics, player, others } = state;
   if (!gridControls || !gridPhysics || !player) {
     throw new Error("Game isn't properly initialized.");
   }
   gridControls.update();
   gridPhysics.update(delta);
-  sendPlayerUpdate(player);
+  sendPlayerUpdate(state);
+  for (const other of others.values()) {
+    other.sprite.x = lerp(other.sprite.x, other.x, 0.5);
+    other.sprite.y = lerp(other.sprite.y, other.y, 0.5);
+  }
 }
 
 /**
@@ -131,8 +176,8 @@ function preload(scene) {
   scene.load.image('tiles', 'assets/cloud_tileset.png');
   scene.load.tilemapTiledJSON('cloud-city-map', 'assets/cloud_city.json');
   scene.load.spritesheet('player', 'assets/characters.png', {
-    frameWidth: Player.SPRITE_FRAME_WIDTH,
-    frameHeight: Player.SPRITE_FRAME_HEIGHT,
+    frameWidth: PLAYER_SPRITE_FRAME_WIDTH,
+    frameHeight: PLAYER_SPRITE_FRAME_HEIGHT,
   });
 }
 
@@ -141,42 +186,39 @@ function preload(scene) {
  */
 
 /**
- * @param {string} key
- * @param {unknown} value
+ * @param {State} state
  */
-function setDebugGlobal(key, value) {
-  console.log('Global: ' + key);
-  // @ts-ignore
-  window[key] = value;
-}
+function startWebSocket(state) {
+  const url = 'ws://127.0.0.1:8080';
+  const socket = new WebSocket(url);
 
-const socket = new WebSocket('ws://127.0.0.1:8080');
+  socket.addEventListener('close', (event) => {
+    console.log('WebSocket closed', event);
+    state.socket = null;
+  });
 
-socket.addEventListener('close', (event) => {
-  console.log('WebSocket closed', event);
-});
+  socket.addEventListener('error', (event) => {
+    console.error(event);
+  });
 
-socket.addEventListener('error', (event) => {
-  console.error(event);
-});
+  socket.addEventListener('open', () => {
+    console.log('WebSocket connection opened.', url);
+    state.socket = socket;
+  });
 
-socket.addEventListener('open', () => {
-  console.log('open');
-  socket.send('"Hello Server!"');
-});
-
-socket.addEventListener(
-  'message',
-  /** @param {MessageEvent<Blob | string>} event */
-  (event) => {
-    const { data } = event;
-    if (typeof data === 'string') {
-      readJsonMessage(JSON.parse(data));
-    } else {
-      data.arrayBuffer().then(readBinaryMessage);
+  socket.addEventListener(
+    'message',
+    /** @param {MessageEvent<Blob | string>} event */
+    (event) => {
+      const { data } = event;
+      if (typeof data === 'string') {
+        readJsonMessage(state, JSON.parse(data));
+      } else {
+        data.arrayBuffer().then((data) => readBinaryMessage(state, data));
+      }
     }
-  }
-);
+  );
+}
 
 /** @type {{[key: string]: Phaser.Math.Vector2}} */
 const movementDirectionVectors = {
@@ -436,14 +478,6 @@ export class GridPhysics {
  */
 
 export class Player {
-  static SPRITE_FRAME_WIDTH = 52;
-  static SPRITE_FRAME_HEIGHT = 72;
-  static SCALE_FACTOR = 1.5;
-
-  static CHARS_IN_ROW = 4;
-  static FRAMES_PER_CHAR_ROW = 3;
-  static FRAMES_PER_CHAR_COL = 4;
-
   /** @type {{ [key in Direction]?: number }} */
   directionToFrameRow = {
     ['down']: 0,
@@ -452,6 +486,7 @@ export class Player {
     ['up']: 3,
   };
   lastFootLeft = false;
+  previousPositionSentToServer = new Vector2(Infinity, Infinity);
 
   /**
    * @param {Phaser.GameObjects.Sprite} sprite
@@ -462,10 +497,9 @@ export class Player {
   constructor(sprite, characterIndex, startTilePosX, startTilePosY) {
     this.sprite = sprite;
     this.characterIndex = characterIndex;
-    this.sprite.scale = Player.SCALE_FACTOR;
     this.sprite.setPosition(
-      startTilePosX * TILE_SIZE + this.playerOffsetX(),
-      startTilePosY * TILE_SIZE + this.playerOffsetY()
+      startTilePosX * TILE_SIZE + PLAYER_OFFSET_X,
+      startTilePosY * TILE_SIZE + PLAYER_OFFSET_Y
     );
     this.sprite.setFrame(this.framesOfDirection('down').standing);
   }
@@ -505,19 +539,14 @@ export class Player {
     this.sprite.setFrame(this.framesOfDirection(direction).standing);
   }
 
-  /**
-   * @returns {Phaser.Math.Vector2}
-   */
+  /** @returns {Phaser.Math.Vector2} */
   getTilePos() {
-    const x = (this.sprite.getCenter().x - this.playerOffsetX()) / TILE_SIZE;
-    const y = (this.sprite.getCenter().y - this.playerOffsetY()) / TILE_SIZE;
+    const x = (this.sprite.getCenter().x - PLAYER_OFFSET_X) / TILE_SIZE;
+    const y = (this.sprite.getCenter().y - PLAYER_OFFSET_Y) / TILE_SIZE;
     return new Phaser.Math.Vector2(Math.floor(x), Math.floor(y));
   }
 
-  /**
-   * @param {Direction} direction
-   * @returns {boolean}
-   */
+  /** @type {(direction: Direction) => boolean} */
   isCurrentFrameStanding(direction) {
     return (
       Number(this.sprite.frame.name) !=
@@ -525,165 +554,17 @@ export class Player {
     );
   }
 
-  /**
-   * @returns {number}
-   */
-  playerOffsetX() {
-    return TILE_SIZE / 2;
-  }
-
-  /**
-   * @returns {number}
-   */
-  playerOffsetY() {
-    return (
-      -((Player.SPRITE_FRAME_HEIGHT * Player.SCALE_FACTOR) % TILE_SIZE) / 2
-    );
-  }
-
-  /**
-   * @param {Direction} direction
-   * @returns {FrameRow}
-   */
+  /** @type {(direction: Direction) => FrameRow} */
   framesOfDirection(direction) {
-    const playerCharRow = Math.floor(this.characterIndex / Player.CHARS_IN_ROW);
-    const playerCharCol = this.characterIndex % Player.CHARS_IN_ROW;
-    const framesInRow = Player.CHARS_IN_ROW * Player.FRAMES_PER_CHAR_ROW;
-    const framesInSameRowBefore = Player.FRAMES_PER_CHAR_ROW * playerCharCol;
+    const playerCharRow = Math.floor(this.characterIndex / PLAYER_CHARS_IN_ROW);
+    const playerCharCol = this.characterIndex % PLAYER_CHARS_IN_ROW;
+    const framesInRow = PLAYER_CHARS_IN_ROW * PLAYER_FRAMES_PER_CHAR_ROW;
+    const framesInSameRowBefore = PLAYER_FRAMES_PER_CHAR_ROW * playerCharCol;
     const dir = this.directionToFrameRow[direction];
     if (dir === undefined) {
       throw new Error('Could not find the direction.');
     }
-    const rows = dir + playerCharRow * Player.FRAMES_PER_CHAR_COL;
-    const startFrame = framesInSameRowBefore + rows * framesInRow;
-    return {
-      leftFoot: startFrame,
-      standing: startFrame + 1,
-      rightFoot: startFrame + 2,
-    };
-  }
-}
-
-export class OtherPlayer {
-  static SPRITE_FRAME_WIDTH = 52;
-  static SPRITE_FRAME_HEIGHT = 72;
-  static SCALE_FACTOR = 1.5;
-
-  static CHARS_IN_ROW = 4;
-  static FRAMES_PER_CHAR_ROW = 3;
-  static FRAMES_PER_CHAR_COL = 4;
-
-  /** @type {{ [key in Direction]?: number }} */
-  directionToFrameRow = {
-    ['down']: 0,
-    ['left']: 1,
-    ['right']: 2,
-    ['up']: 3,
-  };
-  lastFootLeft = false;
-
-  /**
-   * @param {Phaser.GameObjects.Sprite} sprite
-   * @param {number} characterIndex
-   * @param {number} startTilePosX
-   * @param {number} startTilePosY
-   */
-  constructor(sprite, characterIndex, startTilePosX, startTilePosY) {
-    this.sprite = sprite;
-    this.characterIndex = characterIndex;
-    this.sprite.scale = Player.SCALE_FACTOR;
-    this.sprite.setPosition(
-      startTilePosX * TILE_SIZE + this.playerOffsetX(),
-      startTilePosY * TILE_SIZE + this.playerOffsetY()
-    );
-    this.sprite.setFrame(this.framesOfDirection('down').standing);
-  }
-
-  /** @returns {Vector2} */
-  getPosition() {
-    return this.sprite.getCenter();
-  }
-
-  /**
-   * @param {Vector2} position
-   * @returns {void}
-   */
-  setPosition(position) {
-    this.sprite.setPosition(position.x, position.y);
-  }
-
-  /**
-   * @param {Direction} direction
-   * @returns {void}
-   */
-  setWalkingFrame(direction) {
-    const frameRow = this.framesOfDirection(direction);
-    this.sprite.setFrame(
-      this.lastFootLeft ? frameRow.rightFoot : frameRow.leftFoot
-    );
-  }
-
-  /**
-   * @param {Direction} direction
-   * @returns {void}
-   */
-  setStandingFrame(direction) {
-    if (this.isCurrentFrameStanding(direction)) {
-      this.lastFootLeft = !this.lastFootLeft;
-    }
-    this.sprite.setFrame(this.framesOfDirection(direction).standing);
-  }
-
-  /**
-   * @returns {Phaser.Math.Vector2}
-   */
-  getTilePos() {
-    const x = (this.sprite.getCenter().x - this.playerOffsetX()) / TILE_SIZE;
-    const y = (this.sprite.getCenter().y - this.playerOffsetY()) / TILE_SIZE;
-    return new Phaser.Math.Vector2(Math.floor(x), Math.floor(y));
-  }
-
-  /**
-   * @param {Direction} direction
-   * @returns {boolean}
-   */
-  isCurrentFrameStanding(direction) {
-    return (
-      Number(this.sprite.frame.name) !=
-      this.framesOfDirection(direction).standing
-    );
-  }
-
-  /**
-   * @returns {number}
-   */
-  playerOffsetX() {
-    return TILE_SIZE / 2;
-  }
-
-  /**
-   * @returns {number}
-   */
-  playerOffsetY() {
-    return (
-      -((Player.SPRITE_FRAME_HEIGHT * Player.SCALE_FACTOR) % TILE_SIZE) / 2
-    );
-  }
-
-  /**
-   * @param {Direction} direction
-   * @returns {FrameRow}
-   */
-  framesOfDirection(direction) {
-    const playerCharRow = Math.floor(this.characterIndex / Player.CHARS_IN_ROW);
-    const playerCharCol = this.characterIndex % Player.CHARS_IN_ROW;
-    const framesInRow = Player.CHARS_IN_ROW * Player.FRAMES_PER_CHAR_ROW;
-    const framesInSameRowBefore = Player.FRAMES_PER_CHAR_ROW * playerCharCol;
-    const dir = this.directionToFrameRow[direction];
-    if (dir === undefined) {
-      throw new Error('Could not find the direction.');
-    }
-    const rows = dir + playerCharRow * Player.FRAMES_PER_CHAR_COL;
+    const rows = dir + playerCharRow * PLAYER_FRAMES_PER_CHAR_COL;
     const startFrame = framesInSameRowBefore + rows * framesInRow;
     return {
       leftFoot: startFrame,
@@ -696,39 +577,62 @@ export class OtherPlayer {
 const binaryWriter = new BinaryWriter();
 
 /**
- * @param {Player} player
+ * @param {State} state
  */
-function sendPlayerUpdate(player) {
-  const { x, y } = player.getPosition();
+function sendPlayerUpdate(state) {
+  const { player, socket } = state;
+  if (!socket) {
+    return;
+  }
+  const position = player.getPosition();
+  const { previousPositionSentToServer } = player;
+
+  // Guard against sending unneeded updates.
+  if (position.equals(previousPositionSentToServer)) {
+    // Nothing to update.
+    return;
+  }
+  previousPositionSentToServer.copy(position);
+
   binaryWriter.writeTag('player-update');
-  binaryWriter.writeFloat64(x);
-  binaryWriter.writeFloat64(y);
+  binaryWriter.writeFloat64(position.x);
+  binaryWriter.writeFloat64(position.y);
   socket.send(binaryWriter.finalize());
 }
 
-let players = [];
-setDebugGlobal('players', players);
-
 /**
+ * @param {State} state
  * @param {ArrayBuffer} data
  */
-function readBinaryMessage(data) {
+function readBinaryMessage(state, data) {
   const binary = new BinaryReader(new Uint8Array(data));
   switch (binary.readTag()) {
     case 'broadcast-tick':
       {
-        const playerCount = binary.readUint16();
-        players.length = 0;
-        for (let i = 0; i < playerCount; i++) {
-          players.push({
-            generation: binary.readUint32(),
-            positionX: binary.readFloat64(),
-            positionY: binary.readFloat64(),
-          });
+        const playerGeneration = $.getPlayerGeneration(state);
+        const othersCount = binary.readUint16();
+
+        // Update all the other player's information.
+        for (let i = 0; i < othersCount; i++) {
+          const generation = binary.readUint32();
+
+          if (generation === playerGeneration) {
+            // This is our current player, skip the data.
+            binary.readFloat64();
+            binary.readFloat64();
+            continue;
+          }
+
+          // Get or create the other.
+          const other = ensureExists(
+            state.others.get(generation),
+            'Expected another player to exist when updating'
+          );
+
+          // Update the values.
+          other.x = binary.readFloat64();
+          other.y = binary.readFloat64();
         }
-        doOnce('logPlayers', () => {
-          console.log(`!!! players`, players);
-        });
       }
       break;
     default:
@@ -737,14 +641,45 @@ function readBinaryMessage(data) {
 }
 
 /**
+ * @param {State} state
  * @param {ServerToClient} message
  */
-function readJsonMessage(message) {
+function readJsonMessage(state, message) {
   switch (message.type) {
     case 'hello':
       {
-        const { generation } = message;
-        console.log(`!!! generation`, generation);
+        state.generation = message.generation;
+        const others = new Map();
+        for (const other of message.others) {
+          others.set(other.generation, {
+            ...other,
+            sprite: addSprite(state.scene),
+          });
+        }
+        state.others = others;
+      }
+      break;
+    case 'other-joined':
+      {
+        const { other } = message;
+        // This message is broadcast to everyone, so only add
+        // it if it's not the current player.
+        if (other.generation !== state.generation) {
+          state.others.set(other.generation, {
+            ...other,
+            sprite: addSprite(state.scene),
+          });
+        }
+      }
+      break;
+    case 'other-left':
+      {
+        const other = ensureExists(
+          state.others.get(message.generation),
+          'A message was received that a player left, but that player could not be found.'
+        );
+        other.sprite.destroy();
+        state.others.delete(message.generation);
       }
       break;
     default:
