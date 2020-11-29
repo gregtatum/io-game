@@ -1,7 +1,10 @@
 // @ts-check
 import WebSocket from 'ws';
 import { BinaryWriter, BinaryReader } from '../client/shared/utils.js';
-const WEBSOCKET_PORT = 8080;
+import { HOST } from './utils.js';
+// This is used as a type.
+// eslint-disable-next-line no-unused-vars
+import http from 'http';
 
 /**
  * @typedef {import("types").ServerPlayer} ServerPlayer
@@ -19,14 +22,14 @@ const players = new Map();
 
 const binaryWriter = new BinaryWriter();
 
-export function startWebsocketStart() {
+/**
+ * @param {http.Server} httpServer
+ */
+export function startWebsocketServer(httpServer) {
+  // Hook the websocket server into the http one.
   const server = new WebSocket.Server({
-    port: WEBSOCKET_PORT,
+    server: httpServer,
   });
-
-  console.log(
-    `Starting websocket server at http://localhost:${WEBSOCKET_PORT}`
-  );
 
   server.on('connection', handleWebSocketConnection);
 }

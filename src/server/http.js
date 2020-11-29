@@ -2,9 +2,11 @@
 import handler from 'serve-handler';
 import http from 'http';
 import { join } from 'path';
+import { PORT, HOST } from './utils.js';
 
-const HTTP_PORT = 8000;
-
+/**
+ * @returns {http.Server}
+ */
 export function startHttpServer() {
   const server = http.createServer((request, response) => {
     return handler(request, response, {
@@ -12,7 +14,9 @@ export function startHttpServer() {
     });
   });
 
-  server.listen(HTTP_PORT, () => {
-    console.log(`Starting http server at http://localhost:${HTTP_PORT}`);
+  server.listen(PORT, () => {
+    console.log(`Starting http server at http://${HOST}:${PORT}`);
   });
+
+  return server;
 }

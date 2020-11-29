@@ -1,6 +1,6 @@
 // @ts-check
 import { startHttpServer } from './http.js';
-import { startWebsocketStart } from './websocket.js';
+import { startWebsocketServer } from './websocket.js';
 
-startHttpServer();
-startWebsocketStart();
+const server = startHttpServer();
+startWebsocketServer(server);

@@ -189,7 +189,7 @@ function preload(scene) {
  * @param {State} state
  */
 function startWebSocket(state) {
-  const url = 'ws://127.0.0.1:8080';
+  const url = 'ws://' + location.host;
   const socket = new WebSocket(url);
 
   socket.addEventListener('close', (event) => {
