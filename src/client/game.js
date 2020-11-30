@@ -247,26 +247,22 @@ function movePlayer(state, direction) {
   }
 
   // Compute the next tile position.
-  const x = (player.sprite.getCenter().x - PLAYER_OFFSET_X) / TILE_SIZE;
-  const y = (player.sprite.getCenter().y - PLAYER_OFFSET_Y) / TILE_SIZE;
-  const currTilePosition = new Vector2(Math.floor(x), Math.floor(y));
-  const nextTilePosition = currTilePosition.add(
-    ensureExists(movementDirectionVectors[direction])
-  );
+  const dirVector = ensureExists(movementDirectionVectors[direction]);
+  const nextTileX =
+    Math.floor((player.sprite.getCenter().x - PLAYER_OFFSET_X) / TILE_SIZE) +
+    dirVector.x;
+  const nextTileY =
+    Math.floor((player.sprite.getCenter().y - PLAYER_OFFSET_Y) / TILE_SIZE) +
+    dirVector.y;
 
   if (
     // For the next tile position, is there no tile?
     !tilemap.layers.some((layer) =>
-      tilemap.hasTileAt(nextTilePosition.x, nextTilePosition.y, layer.name)
+      tilemap.hasTileAt(nextTileX, nextTileY, layer.name)
     ) ||
     // Is the next tile a colliding tile?
     tilemap.layers.some((layer) => {
-      const tile = tilemap.getTileAt(
-        nextTilePosition.x,
-        nextTilePosition.y,
-        false,
-        layer.name
-      );
+      const tile = tilemap.getTileAt(nextTileX, nextTileY, false, layer.name);
       return tile && tile.properties.collides;
     })
   ) {
@@ -311,6 +307,7 @@ function movePlayerSprite(state, speed) {
 function updatePlayerPosition(state, delta) {
   const { player } = state;
   if (player.movementDirection === 'none') {
+    // This player is not moving, no reason to update the position.
     return;
   }
   const deltaInSeconds = delta / 1000;
