@@ -16,7 +16,7 @@ import { $ } from './selectors.js';
  * @typedef {import("types").Direction} Direction
  * @typedef {import("types").State} State
  * @typedef {import('types').OtherPlayer} OtherPlayer
- * @typedef {import('types').Player2} Player2
+ * @typedef {import('types').Player} Player
  */
 
 const CANVAS_WIDTH = 720;
@@ -86,10 +86,7 @@ async function getInitialState() {
 
   scene.events.on(
     'update',
-    /**
-     * @param {number} time
-     * @param {number} delta
-     */
+    /** @type {(time: number, delta: number) => void} */
     (time, delta) => {
       update(state, time, delta);
     }
@@ -146,6 +143,13 @@ function update(state, _time, delta) {
   updatePlayerFromControls(state);
   updatePlayerPosition(state, delta);
   sendPlayerUpdate(state);
+  updateOtherPlayersPositions(state);
+}
+
+/**
+ * @param {State} state
+ */
+function updateOtherPlayersPositions(state) {
   for (const other of state.others.values()) {
     other.sprite.x = lerp(other.sprite.x, other.x, 0.5);
     other.sprite.y = lerp(other.sprite.y, other.y, 0.5);
@@ -229,6 +233,9 @@ function updatePlayerFromControls(state) {
 const Vector2 = Phaser.Math.Vector2;
 
 /**
+ * When the player is standing still, this function determines if the player
+ * can continue moving in that direction.
+ *
  * @param {State} state
  * @param {Direction} direction
  * @returns {void}
@@ -332,7 +339,7 @@ function updatePlayerPosition(state, delta) {
 
 /**
  * @param {Phaser.Scene} scene
- * @returns {Player2}
+ * @returns {Player}
  */
 function createPlayer(scene) {
   const sprite = addSprite(scene);
