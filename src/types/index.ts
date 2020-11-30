@@ -1,5 +1,4 @@
 import WebSocketServer from 'ws';
-import { Player, GridControls, GridPhysics } from '../client/game';
 
 export type PlayerGeneration = number;
 
@@ -86,7 +85,6 @@ export interface State {
   player: Player;
   tilemap: Phaser.Tilemaps.Tilemap;
   others: Map<number, OtherPlayer>;
-  gridPhysics: GridPhysics;
 }
 
 export type Selector<T> = (state: State) => T;

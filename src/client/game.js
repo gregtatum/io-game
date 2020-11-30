@@ -16,6 +16,7 @@ import { $ } from './selectors.js';
  * @typedef {import("types").Direction} Direction
  * @typedef {import("types").State} State
  * @typedef {import('types').OtherPlayer} OtherPlayer
+ * @typedef {import('types').Player2} Player2
  */
 
 const CANVAS_WIDTH = 720;
@@ -30,6 +31,7 @@ const PLAYER_FRAMES_PER_CHAR_COL = 4;
 const PLAYER_OFFSET_X = TILE_SIZE / 2;
 const PLAYER_OFFSET_Y =
   -((PLAYER_SPRITE_FRAME_HEIGHT * PLAYER_SCALE_FACTOR) % TILE_SIZE) / 2;
+const SPEED_PIXELS_PER_SECOND = TILE_SIZE * 4;
 
 getInitialState();
 
@@ -66,8 +68,7 @@ async function getInitialState() {
   /** @type {Phaser.Scene} */
   const scene = game.scene.scenes[0];
   const tilemap = setupTilemap(scene);
-  const player = setupPlayer(scene);
-  const gridPhysics = new GridPhysics(player, tilemap);
+  const player = createPlayer(scene);
 
   /** @type {State} */
   const state = {
@@ -77,7 +78,6 @@ async function getInitialState() {
     scene,
     player,
     tilemap,
-    gridPhysics,
     others: new Map(),
   };
 
@@ -124,17 +124,6 @@ function addSprite(scene) {
 
 /**
  * @param {Phaser.Scene} scene
- * @returns {Player}
- */
-function setupPlayer(scene) {
-  const sprite = addSprite(scene);
-  scene.cameras.main.startFollow(sprite);
-
-  return new Player(sprite, 6, 8, 8);
-}
-
-/**
- * @param {Phaser.Scene} scene
  * @returns {Phaser.Tilemaps.Tilemap}
  */
 function setupTilemap(scene) {
@@ -154,11 +143,10 @@ function setupTilemap(scene) {
  * @param {number} delta
  */
 function update(state, _time, delta) {
-  const { gridPhysics, others } = state;
   updatePlayerFromControls(state);
-  gridPhysics.updatePlayerPosition(delta);
+  updatePlayerPosition(state, delta);
   sendPlayerUpdate(state);
-  for (const other of others.values()) {
+  for (const other of state.others.values()) {
     other.sprite.x = lerp(other.sprite.x, other.x, 0.5);
     other.sprite.y = lerp(other.sprite.y, other.y, 0.5);
   }
@@ -228,127 +216,110 @@ const movementDirectionVectors = {
 function updatePlayerFromControls(state) {
   const cursors = state.scene.input.keyboard.createCursorKeys();
   if (cursors.left && cursors.left.isDown) {
-    state.gridPhysics.movePlayer('left');
+    movePlayer(state, 'left');
   } else if (cursors.right && cursors.right.isDown) {
-    state.gridPhysics.movePlayer('right');
+    movePlayer(state, 'right');
   } else if (cursors.up && cursors.up.isDown) {
-    state.gridPhysics.movePlayer('up');
+    movePlayer(state, 'up');
   } else if (cursors.down && cursors.down.isDown) {
-    state.gridPhysics.movePlayer('down');
+    movePlayer(state, 'down');
   }
 }
 
 const Vector2 = Phaser.Math.Vector2;
 
-export class GridPhysics {
-  /** @type {Direction} */
-  movementDirection = 'none';
-  /** @type {number} */
-  speedPixelsPerSecond = TILE_SIZE * 4;
-  /** @type {number} */
-  tileSizePixelsWalked = 0;
-  decimalPlacesLeft = 0;
-
-  /**
-   * @param {Player} player
-   * @param {Phaser.Tilemaps.Tilemap} tileMap
-   */
-  constructor(player, tileMap) {
-    this.player = player;
-    this.tileMap = tileMap;
+/**
+ * @param {State} state
+ * @param {Direction} direction
+ * @returns {void}
+ */
+function movePlayer(state, direction) {
+  const { player, tilemap } = state;
+  if (player.movementDirection !== 'none') {
+    return;
   }
 
-  /**
-   * @param {Direction} direction
-   * @returns {void}
-   */
-  movePlayer(direction) {
-    if (this.movementDirection !== 'none') {
-      return;
-    }
+  // Compute the next tile position.
+  const x = (player.sprite.getCenter().x - PLAYER_OFFSET_X) / TILE_SIZE;
+  const y = (player.sprite.getCenter().y - PLAYER_OFFSET_Y) / TILE_SIZE;
+  const currTilePosition = new Vector2(Math.floor(x), Math.floor(y));
+  const nextTilePosition = currTilePosition.add(
+    ensureExists(movementDirectionVectors[direction])
+  );
 
-    // Compute the next tile position.
-    const x = (this.player.sprite.getCenter().x - PLAYER_OFFSET_X) / TILE_SIZE;
-    const y = (this.player.sprite.getCenter().y - PLAYER_OFFSET_Y) / TILE_SIZE;
-    const currTilePosition = new Vector2(Math.floor(x), Math.floor(y));
-    const nextTilePosition = currTilePosition.add(
-      ensureExists(movementDirectionVectors[direction])
-    );
-
-    if (
-      // For the next tile position, is there no tile?
-      !this.tileMap.layers.some((layer) =>
-        this.tileMap.hasTileAt(
-          nextTilePosition.x,
-          nextTilePosition.y,
-          layer.name
-        )
-      ) ||
-      // Is the next tile a colliding tile?
-      this.tileMap.layers.some((layer) => {
-        const tile = this.tileMap.getTileAt(
-          nextTilePosition.x,
-          nextTilePosition.y,
-          false,
-          layer.name
-        );
-        return tile && tile.properties.collides;
-      })
-    ) {
-      this.player.setStandingFrame(direction);
-    } else {
-      this.movementDirection = direction;
-    }
-  }
-
-  /**
-   * @param {number} delta
-   * @returns {void}
-   */
-  updatePlayerPosition(delta) {
-    if (this.movementDirection === 'none') {
-      return;
-    }
-    const deltaInSeconds = delta / 1000;
-    const speedPerDelta = this.speedPixelsPerSecond * deltaInSeconds;
-
-    this.decimalPlacesLeft = (speedPerDelta + this.decimalPlacesLeft) % 1;
-    const pixelsToWalkThisUpdate = Math.floor(
-      speedPerDelta + this.decimalPlacesLeft
-    );
-
-    if (this.tileSizePixelsWalked + pixelsToWalkThisUpdate >= TILE_SIZE) {
-      // Thie player will cross the tile border this update.
-      this.movePlayerSprite(TILE_SIZE - this.tileSizePixelsWalked);
-      this.movementDirection = 'none';
-    } else {
-      this.movePlayerSprite(pixelsToWalkThisUpdate);
-    }
-  }
-
-  /**
-   * @param {number} speed
-   * @returns {void}
-   */
-  movePlayerSprite(speed) {
-    const newPlayerPos = this.player.sprite
-      .getCenter()
-      .add(
-        ensureExists(movementDirectionVectors[this.movementDirection])
-          .clone()
-          .multiply(new Vector2(speed))
+  if (
+    // For the next tile position, is there no tile?
+    !tilemap.layers.some((layer) =>
+      tilemap.hasTileAt(nextTilePosition.x, nextTilePosition.y, layer.name)
+    ) ||
+    // Is the next tile a colliding tile?
+    tilemap.layers.some((layer) => {
+      const tile = tilemap.getTileAt(
+        nextTilePosition.x,
+        nextTilePosition.y,
+        false,
+        layer.name
       );
-    this.player.sprite.setPosition(newPlayerPos.x, newPlayerPos.y);
-    this.tileSizePixelsWalked += speed;
+      return tile && tile.properties.collides;
+    })
+  ) {
+    setStandingFrame(state, direction);
+  } else {
+    player.movementDirection = direction;
+  }
+}
 
-    if (this.tileSizePixelsWalked > TILE_SIZE / 2) {
-      // The player has walked half a tile.
-      this.player.setStandingFrame(this.movementDirection);
-    } else {
-      this.player.setWalkingFrame(this.movementDirection);
-    }
+/**
+ * @param {State} state
+ * @param {number} speed
+ * @returns {void}
+ */
+function movePlayerSprite(state, speed) {
+  const { player } = state;
+  const newPlayerPos = player.sprite
+    .getCenter()
+    .add(
+      ensureExists(movementDirectionVectors[player.movementDirection])
+        .clone()
+        .multiply(new Vector2(speed))
+    );
+  player.sprite.setPosition(newPlayerPos.x, newPlayerPos.y);
+  player.tileSizePixelsWalked += speed;
 
-    this.tileSizePixelsWalked %= TILE_SIZE;
+  if (player.tileSizePixelsWalked > TILE_SIZE / 2) {
+    // The player has walked half a tile.
+    setStandingFrame(state, player.movementDirection);
+  } else {
+    setWalkingFrame(state, player.movementDirection);
+  }
+
+  player.tileSizePixelsWalked %= TILE_SIZE;
+}
+
+/**
+ * @param {State} state
+ * @param {number} delta
+ * @returns {void}
+ */
+function updatePlayerPosition(state, delta) {
+  const { player } = state;
+  if (player.movementDirection === 'none') {
+    return;
+  }
+  const deltaInSeconds = delta / 1000;
+  const speedPerDelta = SPEED_PIXELS_PER_SECOND * deltaInSeconds;
+
+  player.decimalPlacesLeft = (speedPerDelta + player.decimalPlacesLeft) % 1;
+  const pixelsToWalkThisUpdate = Math.floor(
+    speedPerDelta + player.decimalPlacesLeft
+  );
+
+  if (player.tileSizePixelsWalked + pixelsToWalkThisUpdate >= TILE_SIZE) {
+    // Thie player will cross the tile border this update.
+    movePlayerSprite(state, TILE_SIZE - player.tileSizePixelsWalked);
+    player.movementDirection = 'none';
+  } else {
+    movePlayerSprite(state, pixelsToWalkThisUpdate);
   }
 }
 
@@ -359,77 +330,101 @@ export class GridPhysics {
  * @prop {number} rightFoot
  */
 
-export class Player {
-  /** @type {{ [key in Direction]?: number }} */
-  directionToFrameRow = {
-    ['down']: 0,
-    ['left']: 1,
-    ['right']: 2,
-    ['up']: 3,
+/**
+ * @param {Phaser.Scene} scene
+ * @returns {Player2}
+ */
+function createPlayer(scene) {
+  const sprite = addSprite(scene);
+  scene.cameras.main.startFollow(sprite);
+
+  const characterIndex = 6;
+  const startTilePosX = 8;
+  const startTilePosY = 8;
+
+  sprite.setPosition(
+    startTilePosX * TILE_SIZE + PLAYER_OFFSET_X,
+    startTilePosY * TILE_SIZE + PLAYER_OFFSET_Y
+  );
+  sprite.setFrame(getFrameIndexFromDirection(characterIndex, 'down').standing);
+
+  return {
+    sprite,
+    previousPositionSentToServer: new Vector2(Infinity, Infinity),
+    lastFootLeft: false,
+    characterIndex,
+    movementDirection: 'none',
+    tileSizePixelsWalked: 0,
+    decimalPlacesLeft: 0,
   };
-  lastFootLeft = false;
-  previousPositionSentToServer = new Vector2(Infinity, Infinity);
+}
 
-  /**
-   * @param {Phaser.GameObjects.Sprite} sprite
-   * @param {number} characterIndex
-   * @param {number} startTilePosX
-   * @param {number} startTilePosY
-   */
-  constructor(sprite, characterIndex, startTilePosX, startTilePosY) {
-    this.sprite = sprite;
-    this.characterIndex = characterIndex;
-    this.sprite.setPosition(
-      startTilePosX * TILE_SIZE + PLAYER_OFFSET_X,
-      startTilePosY * TILE_SIZE + PLAYER_OFFSET_Y
-    );
-    this.sprite.setFrame(this.framesOfDirection('down').standing);
+/**
+ * @param {State} state
+ * @param {Direction} direction
+ * @returns {void}
+ */
+function setWalkingFrame(state, direction) {
+  const { player } = state;
+  const frameRow = getFrameIndexFromDirection(player.characterIndex, direction);
+  player.sprite.setFrame(
+    player.lastFootLeft ? frameRow.rightFoot : frameRow.leftFoot
+  );
+}
+
+/**
+ * @param {State} state
+ * @param {Direction} direction
+ * @returns {void}
+ */
+function setStandingFrame(state, direction) {
+  const { player } = state;
+  if (
+    // Is current frame standing?
+    Number(player.sprite.frame.name) !=
+    getFrameIndexFromDirection(player.characterIndex, direction).standing
+  ) {
+    player.lastFootLeft = !player.lastFootLeft;
   }
+  player.sprite.setFrame(
+    getFrameIndexFromDirection(player.characterIndex, direction).standing
+  );
+}
 
-  /**
-   * @param {Direction} direction
-   * @returns {void}
-   */
-  setWalkingFrame(direction) {
-    const frameRow = this.framesOfDirection(direction);
-    this.sprite.setFrame(
-      this.lastFootLeft ? frameRow.rightFoot : frameRow.leftFoot
-    );
-  }
-
-  /**
-   * @param {Direction} direction
-   * @returns {void}
-   */
-  setStandingFrame(direction) {
-    if (
-      // Is current frame standing?
-      Number(this.sprite.frame.name) !=
-      this.framesOfDirection(direction).standing
-    ) {
-      this.lastFootLeft = !this.lastFootLeft;
-    }
-    this.sprite.setFrame(this.framesOfDirection(direction).standing);
-  }
-
-  /** @type {(direction: Direction) => FrameRow} */
-  framesOfDirection(direction) {
-    const playerCharRow = Math.floor(this.characterIndex / PLAYER_CHARS_IN_ROW);
-    const playerCharCol = this.characterIndex % PLAYER_CHARS_IN_ROW;
-    const framesInRow = PLAYER_CHARS_IN_ROW * PLAYER_FRAMES_PER_CHAR_ROW;
-    const framesInSameRowBefore = PLAYER_FRAMES_PER_CHAR_ROW * playerCharCol;
-    const dir = this.directionToFrameRow[direction];
-    if (dir === undefined) {
+/**
+ * @param {number} characterIndex
+ * @param {Direction} direction
+ * @returns {FrameRow}
+ */
+function getFrameIndexFromDirection(characterIndex, direction) {
+  const playerCharRow = Math.floor(characterIndex / PLAYER_CHARS_IN_ROW);
+  const playerCharCol = characterIndex % PLAYER_CHARS_IN_ROW;
+  const framesInRow = PLAYER_CHARS_IN_ROW * PLAYER_FRAMES_PER_CHAR_ROW;
+  const framesInSameRowBefore = PLAYER_FRAMES_PER_CHAR_ROW * playerCharCol;
+  let dir;
+  switch (direction) {
+    case 'down':
+      dir = 0;
+      break;
+    case 'left':
+      dir = 1;
+      break;
+    case 'right':
+      dir = 2;
+      break;
+    case 'up':
+      dir = 3;
+      break;
+    default:
       throw new Error('Could not find the direction.');
-    }
-    const rows = dir + playerCharRow * PLAYER_FRAMES_PER_CHAR_COL;
-    const startFrame = framesInSameRowBefore + rows * framesInRow;
-    return {
-      leftFoot: startFrame,
-      standing: startFrame + 1,
-      rightFoot: startFrame + 2,
-    };
   }
+  const rows = dir + playerCharRow * PLAYER_FRAMES_PER_CHAR_COL;
+  const startFrame = framesInSameRowBefore + rows * framesInRow;
+  return {
+    leftFoot: startFrame,
+    standing: startFrame + 1,
+    rightFoot: startFrame + 2,
+  };
 }
 
 const binaryWriter = new BinaryWriter();
