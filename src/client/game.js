@@ -68,7 +68,6 @@ async function getInitialState() {
   const tilemap = setupTilemap(scene);
   const player = setupPlayer(scene);
   const gridPhysics = new GridPhysics(player, tilemap);
-  const gridControls = new GridControls(scene.input, gridPhysics);
 
   /** @type {State} */
   const state = {
@@ -79,7 +78,6 @@ async function getInitialState() {
     player,
     tilemap,
     gridPhysics,
-    gridControls,
     others: new Map(),
   };
 
@@ -156,11 +154,8 @@ function setupTilemap(scene) {
  * @param {number} delta
  */
 function update(state, _time, delta) {
-  const { gridControls, gridPhysics, player, others } = state;
-  if (!gridControls || !gridPhysics || !player) {
-    throw new Error("Game isn't properly initialized.");
-  }
-  gridControls.update();
+  const { gridPhysics, others } = state;
+  updatePlayerFromControls(state);
   gridPhysics.updatePlayerPosition(delta);
   sendPlayerUpdate(state);
   for (const other of others.values()) {
@@ -227,28 +222,19 @@ const movementDirectionVectors = {
   left: Phaser.Math.Vector2.LEFT,
   right: Phaser.Math.Vector2.RIGHT,
 };
-
-export class GridControls {
-  /**
-   * @param {Phaser.Input.InputPlugin} input
-   * @param {GridPhysics} gridPhysics
-   */
-  constructor(input, gridPhysics) {
-    this.input = input;
-    this.gridPhysics = gridPhysics;
-  }
-
-  update() {
-    const cursors = this.input.keyboard.createCursorKeys();
-    if (cursors.left && cursors.left.isDown) {
-      this.gridPhysics.movePlayer('left');
-    } else if (cursors.right && cursors.right.isDown) {
-      this.gridPhysics.movePlayer('right');
-    } else if (cursors.up && cursors.up.isDown) {
-      this.gridPhysics.movePlayer('up');
-    } else if (cursors.down && cursors.down.isDown) {
-      this.gridPhysics.movePlayer('down');
-    }
+/**
+ * @param {State} state
+ */
+function updatePlayerFromControls(state) {
+  const cursors = state.scene.input.keyboard.createCursorKeys();
+  if (cursors.left && cursors.left.isDown) {
+    state.gridPhysics.movePlayer('left');
+  } else if (cursors.right && cursors.right.isDown) {
+    state.gridPhysics.movePlayer('right');
+  } else if (cursors.up && cursors.up.isDown) {
+    state.gridPhysics.movePlayer('up');
+  } else if (cursors.down && cursors.down.isDown) {
+    state.gridPhysics.movePlayer('down');
   }
 }
 

@@ -86,7 +86,6 @@ export interface State {
   player: Player;
   tilemap: Phaser.Tilemaps.Tilemap;
   others: Map<number, OtherPlayer>;
-  gridControls: GridControls;
   gridPhysics: GridPhysics;
 }
 
