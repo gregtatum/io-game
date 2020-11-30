@@ -34,6 +34,16 @@ export interface ServerPlayer {
   sendMessage(message: ServerToClient): void;
 }
 
+export interface Player {
+  lastFootLeft: boolean;
+  previousPositionSentToServer: Phaser.Math.Vector2;
+  sprite: Phaser.GameObjects.Sprite;
+  characterIndex: number;
+  movementDirection: Direction;
+  tileSizePixelsWalked: number;
+  decimalPlacesLeft: number;
+}
+
 export type Direction =
   | "none"
   | "left"

@@ -161,7 +161,7 @@ function update(state, _time, delta) {
     throw new Error("Game isn't properly initialized.");
   }
   gridControls.update();
-  gridPhysics.update(delta);
+  gridPhysics.updatePlayerPosition(delta);
   sendPlayerUpdate(state);
   for (const other of others.values()) {
     other.sprite.x = lerp(other.sprite.x, other.x, 0.5);
@@ -277,82 +277,42 @@ export class GridPhysics {
    * @returns {void}
    */
   movePlayer(direction) {
-    if (this.isMoving()) return;
-    if (this.isBlockingDirection(direction)) {
+    if (this.movementDirection !== 'none') {
+      return;
+    }
+
+    // Compute the next tile position.
+    const x = (this.player.sprite.getCenter().x - PLAYER_OFFSET_X) / TILE_SIZE;
+    const y = (this.player.sprite.getCenter().y - PLAYER_OFFSET_Y) / TILE_SIZE;
+    const currTilePosition = new Vector2(Math.floor(x), Math.floor(y));
+    const nextTilePosition = currTilePosition.add(
+      ensureExists(movementDirectionVectors[direction])
+    );
+
+    if (
+      // For the next tile position, is there no tile?
+      !this.tileMap.layers.some((layer) =>
+        this.tileMap.hasTileAt(
+          nextTilePosition.x,
+          nextTilePosition.y,
+          layer.name
+        )
+      ) ||
+      // Is the next tile a colliding tile?
+      this.tileMap.layers.some((layer) => {
+        const tile = this.tileMap.getTileAt(
+          nextTilePosition.x,
+          nextTilePosition.y,
+          false,
+          layer.name
+        );
+        return tile && tile.properties.collides;
+      })
+    ) {
       this.player.setStandingFrame(direction);
     } else {
-      this.startMoving(direction);
+      this.movementDirection = direction;
     }
-  }
-
-  /**
-   * @param {number} delta
-   * @returns {void}
-   */
-  update(delta) {
-    if (this.isMoving()) {
-      this.updatePlayerPosition(delta);
-    }
-  }
-
-  /**
-   * @returns {boolean}
-   */
-  isMoving() {
-    return this.movementDirection != 'none';
-  }
-
-  /**
-   * @param {Direction} direction
-   * @returns {void}
-   */
-  startMoving(direction) {
-    this.movementDirection = direction;
-  }
-
-  /**
-   * @param {Direction} direction
-   * @returns {Vector2}
-   */
-  tilePosInDirection(direction) {
-    const vec = movementDirectionVectors[direction];
-    if (!vec) {
-      throw new Error('Could not find the vector.');
-    }
-    return this.player.getTilePos().add(vec);
-  }
-
-  /**
-   * @param {Direction} direction
-   * @returns {boolean}
-   */
-  isBlockingDirection(direction) {
-    return this.hasBlockingTile(this.tilePosInDirection(direction));
-  }
-
-  /**
-   * @param {Vector2} pos
-   * @returns {boolean}
-   */
-  hasNoTile(pos) {
-    return !this.tileMap.layers.some((layer) =>
-      this.tileMap.hasTileAt(pos.x, pos.y, layer.name)
-    );
-  }
-
-  /**
-   * @param {Vector2} pos
-   * @returns {boolean}
-   */
-  hasBlockingTile(pos) {
-    if (this.hasNoTile(pos)) {
-      return true;
-    }
-
-    return this.tileMap.layers.some((layer) => {
-      const tile = this.tileMap.getTileAt(pos.x, pos.y, false, layer.name);
-      return tile && tile.properties.collides;
-    });
   }
 
   /**
@@ -360,59 +320,24 @@ export class GridPhysics {
    * @returns {void}
    */
   updatePlayerPosition(delta) {
-    this.decimalPlacesLeft = this.getDecimalPlaces(
-      this.getSpeedPerDelta(delta) + this.decimalPlacesLeft
-    );
-    const pixelsToWalkThisUpdate = this.getIntegerPart(
-      this.getSpeedPerDelta(delta) + this.decimalPlacesLeft
+    if (this.movementDirection === 'none') {
+      return;
+    }
+    const deltaInSeconds = delta / 1000;
+    const speedPerDelta = this.speedPixelsPerSecond * deltaInSeconds;
+
+    this.decimalPlacesLeft = (speedPerDelta + this.decimalPlacesLeft) % 1;
+    const pixelsToWalkThisUpdate = Math.floor(
+      speedPerDelta + this.decimalPlacesLeft
     );
 
-    if (this.willCrossTileBorderThisUpdate(pixelsToWalkThisUpdate)) {
-      this.movePlayerSpriteRestOfTile();
+    if (this.tileSizePixelsWalked + pixelsToWalkThisUpdate >= TILE_SIZE) {
+      // Thie player will cross the tile border this update.
+      this.movePlayerSprite(TILE_SIZE - this.tileSizePixelsWalked);
+      this.movementDirection = 'none';
     } else {
       this.movePlayerSprite(pixelsToWalkThisUpdate);
     }
-  }
-
-  /**
-   * @param {number} float
-   * @returns {number}
-   */
-  getIntegerPart(float) {
-    return Math.floor(float);
-  }
-
-  /**
-   * @param {number} float
-   * @returns {number}
-   */
-  getDecimalPlaces(float) {
-    return float % 1;
-  }
-
-  /**
-   * @param {number} delta
-   * @returns {number}
-   */
-  getSpeedPerDelta(delta) {
-    const deltaInSeconds = delta / 1000;
-    return this.speedPixelsPerSecond * deltaInSeconds;
-  }
-
-  /**
-   * @param {number} pixelsToWalkThisUpdate
-   * @returns {boolean}
-   */
-  willCrossTileBorderThisUpdate(pixelsToWalkThisUpdate) {
-    return this.tileSizePixelsWalked + pixelsToWalkThisUpdate >= TILE_SIZE;
-  }
-
-  /**
-   * @returns {void}
-   */
-  movePlayerSpriteRestOfTile() {
-    this.movePlayerSprite(TILE_SIZE - this.tileSizePixelsWalked);
-    this.stopMoving();
   }
 
   /**
@@ -435,26 +360,12 @@ export class GridPhysics {
    * @returns {void}
    */
   updatePlayerFrame(direction, tileSizePixelsWalked) {
-    if (this.hasWalkedHalfATile(tileSizePixelsWalked)) {
+    if (tileSizePixelsWalked > TILE_SIZE / 2) {
+      // The player has walked half a tile.
       this.player.setStandingFrame(direction);
     } else {
       this.player.setWalkingFrame(direction);
     }
-  }
-
-  /**
-   * @param {number} tileSizePixelsWalked
-   * @returns {boolean}
-   */
-  hasWalkedHalfATile(tileSizePixelsWalked) {
-    return tileSizePixelsWalked > TILE_SIZE / 2;
-  }
-
-  /**
-   * @returns {void}
-   */
-  stopMoving() {
-    this.movementDirection = 'none';
   }
 
   /**
@@ -537,13 +448,6 @@ export class Player {
       this.lastFootLeft = !this.lastFootLeft;
     }
     this.sprite.setFrame(this.framesOfDirection(direction).standing);
-  }
-
-  /** @returns {Phaser.Math.Vector2} */
-  getTilePos() {
-    const x = (this.sprite.getCenter().x - PLAYER_OFFSET_X) / TILE_SIZE;
-    const y = (this.sprite.getCenter().y - PLAYER_OFFSET_Y) / TILE_SIZE;
-    return new Phaser.Math.Vector2(Math.floor(x), Math.floor(y));
   }
 
   /** @type {(direction: Direction) => boolean} */
