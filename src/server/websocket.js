@@ -1,7 +1,6 @@
 // @ts-check
 import WebSocket from 'ws';
 import { BinaryWriter, BinaryReader } from '../client/shared/utils.js';
-import { HOST } from './utils.js';
 // This is used as a type.
 // eslint-disable-next-line no-unused-vars
 import http from 'http';

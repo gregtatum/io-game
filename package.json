@@ -10,7 +10,7 @@
     "start-dev": "HOST=localhost PORT=8000 yarn start",
     "start": "node src/server",
     "ts": "tsc --noEmit",
-    "lint": "eslint client server",
+    "lint": "eslint src",
     "test": "node --experimental-vm-modules node_modules/.bin/jest"
   },
   "jest": {
