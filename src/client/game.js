@@ -345,39 +345,24 @@ export class GridPhysics {
    * @returns {void}
    */
   movePlayerSprite(speed) {
-    const newPlayerPos = this.player
-      .getPosition()
-      .add(this.movementDistance(speed));
-    this.player.setPosition(newPlayerPos);
+    const newPlayerPos = this.player.sprite
+      .getCenter()
+      .add(
+        ensureExists(movementDirectionVectors[this.movementDirection])
+          .clone()
+          .multiply(new Vector2(speed))
+      );
+    this.player.sprite.setPosition(newPlayerPos.x, newPlayerPos.y);
     this.tileSizePixelsWalked += speed;
-    this.updatePlayerFrame(this.movementDirection, this.tileSizePixelsWalked);
-    this.tileSizePixelsWalked %= TILE_SIZE;
-  }
 
-  /**
-   * @param {Direction} direction
-   * @param {number} tileSizePixelsWalked
-   * @returns {void}
-   */
-  updatePlayerFrame(direction, tileSizePixelsWalked) {
-    if (tileSizePixelsWalked > TILE_SIZE / 2) {
+    if (this.tileSizePixelsWalked > TILE_SIZE / 2) {
       // The player has walked half a tile.
-      this.player.setStandingFrame(direction);
+      this.player.setStandingFrame(this.movementDirection);
     } else {
-      this.player.setWalkingFrame(direction);
+      this.player.setWalkingFrame(this.movementDirection);
     }
-  }
 
-  /**
-   * @param {number} speed
-   * @returns {Vector2}
-   */
-  movementDistance(speed) {
-    const vec = movementDirectionVectors[this.movementDirection];
-    if (!vec) {
-      throw new Error('Could not find the vector.');
-    }
-    return vec.clone().multiply(new Vector2(speed));
+    this.tileSizePixelsWalked %= TILE_SIZE;
   }
 }
 
@@ -415,19 +400,6 @@ export class Player {
     this.sprite.setFrame(this.framesOfDirection('down').standing);
   }
 
-  /** @returns {Vector2} */
-  getPosition() {
-    return this.sprite.getCenter();
-  }
-
-  /**
-   * @param {Vector2} position
-   * @returns {void}
-   */
-  setPosition(position) {
-    this.sprite.setPosition(position.x, position.y);
-  }
-
   /**
    * @param {Direction} direction
    * @returns {void}
@@ -444,18 +416,14 @@ export class Player {
    * @returns {void}
    */
   setStandingFrame(direction) {
-    if (this.isCurrentFrameStanding(direction)) {
+    if (
+      // Is current frame standing?
+      Number(this.sprite.frame.name) !=
+      this.framesOfDirection(direction).standing
+    ) {
       this.lastFootLeft = !this.lastFootLeft;
     }
     this.sprite.setFrame(this.framesOfDirection(direction).standing);
-  }
-
-  /** @type {(direction: Direction) => boolean} */
-  isCurrentFrameStanding(direction) {
-    return (
-      Number(this.sprite.frame.name) !=
-      this.framesOfDirection(direction).standing
-    );
   }
 
   /** @type {(direction: Direction) => FrameRow} */
@@ -488,7 +456,7 @@ function sendPlayerUpdate(state) {
   if (!socket) {
     return;
   }
-  const position = player.getPosition();
+  const position = player.sprite.getCenter();
   const { previousPositionSentToServer } = player;
 
   // Guard against sending unneeded updates.
