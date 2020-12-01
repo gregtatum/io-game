@@ -207,13 +207,26 @@ function startWebSocket(state) {
   );
 }
 
-/** @type {{[key: string]: Phaser.Math.Vector2}} */
-const movementDirectionVectors = {
-  up: Phaser.Math.Vector2.UP,
-  down: Phaser.Math.Vector2.DOWN,
-  left: Phaser.Math.Vector2.LEFT,
-  right: Phaser.Math.Vector2.RIGHT,
-};
+/**
+ * Turns a Direction string into a real vector
+ * @param {Direction} direction
+ * @return {Vector2}
+ */
+function getDirectionVector(direction) {
+  switch (direction) {
+    case 'up':
+      return Vector2.UP;
+    case 'down':
+      return Vector2.DOWN;
+    case 'left':
+      return Vector2.LEFT;
+    case 'right':
+      return Vector2.RIGHT;
+    default:
+      throw new Error('Cannot get a direction vector for ' + direction);
+  }
+}
+
 /**
  * @param {State} state
  */
@@ -247,13 +260,11 @@ function movePlayer(state, direction) {
   }
 
   // Compute the next tile position.
-  const dirVector = ensureExists(movementDirectionVectors[direction]);
+  const { x, y } = getDirectionVector(direction);
   const nextTileX =
-    Math.floor((player.sprite.getCenter().x - PLAYER_OFFSET_X) / TILE_SIZE) +
-    dirVector.x;
+    Math.floor((player.sprite.getCenter().x - PLAYER_OFFSET_X) / TILE_SIZE) + x;
   const nextTileY =
-    Math.floor((player.sprite.getCenter().y - PLAYER_OFFSET_Y) / TILE_SIZE) +
-    dirVector.y;
+    Math.floor((player.sprite.getCenter().y - PLAYER_OFFSET_Y) / TILE_SIZE) + y;
 
   if (
     // For the next tile position, is there no tile?
@@ -282,7 +293,7 @@ function movePlayerSprite(state, speed) {
   const newPlayerPos = player.sprite
     .getCenter()
     .add(
-      ensureExists(movementDirectionVectors[player.movementDirection])
+      getDirectionVector(player.movementDirection)
         .clone()
         .multiply(new Vector2(speed))
     );
