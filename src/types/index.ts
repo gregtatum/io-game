@@ -38,13 +38,13 @@ export interface Player {
   previousPositionSentToServer: Phaser.Math.Vector2;
   sprite: Phaser.GameObjects.Sprite;
   characterIndex: number;
-  movementDirection: Direction;
+  direction: Direction;
+  isMoving: boolean;
   tileSizePixelsWalked: number;
   decimalPlacesLeft: number;
 }
 
 export type Direction =
-  | "none"
   | "left"
   | "up"
   | "right"

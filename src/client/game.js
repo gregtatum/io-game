@@ -255,7 +255,7 @@ const Vector2 = Phaser.Math.Vector2;
  */
 function movePlayer(state, direction) {
   const { player, tilemap } = state;
-  if (player.movementDirection !== 'none') {
+  if (player.isMoving) {
     return;
   }
 
@@ -277,9 +277,13 @@ function movePlayer(state, direction) {
       return tile && tile.properties.collides;
     })
   ) {
+    // The player is trying to move into a blocked tile.
+    player.direction = direction;
+    player.isMoving = false;
     setStandingFrame(state, direction);
   } else {
-    player.movementDirection = direction;
+    player.direction = direction;
+    player.isMoving = true;
   }
 }
 
@@ -293,18 +297,16 @@ function movePlayerSprite(state, speed) {
   const newPlayerPos = player.sprite
     .getCenter()
     .add(
-      getDirectionVector(player.movementDirection)
-        .clone()
-        .multiply(new Vector2(speed))
+      getDirectionVector(player.direction).clone().multiply(new Vector2(speed))
     );
   player.sprite.setPosition(newPlayerPos.x, newPlayerPos.y);
   player.tileSizePixelsWalked += speed;
 
   if (player.tileSizePixelsWalked > TILE_SIZE / 2) {
     // The player has walked half a tile.
-    setStandingFrame(state, player.movementDirection);
+    setStandingFrame(state, player.direction);
   } else {
-    setWalkingFrame(state, player.movementDirection);
+    setWalkingFrame(state, player.direction);
   }
 
   player.tileSizePixelsWalked %= TILE_SIZE;
@@ -317,7 +319,7 @@ function movePlayerSprite(state, speed) {
  */
 function updatePlayerPosition(state, delta) {
   const { player } = state;
-  if (player.movementDirection === 'none') {
+  if (!player.isMoving) {
     // This player is not moving, no reason to update the position.
     return;
   }
@@ -332,7 +334,7 @@ function updatePlayerPosition(state, delta) {
   if (player.tileSizePixelsWalked + pixelsToWalkThisUpdate >= TILE_SIZE) {
     // Thie player will cross the tile border this update.
     movePlayerSprite(state, TILE_SIZE - player.tileSizePixelsWalked);
-    player.movementDirection = 'none';
+    player.isMoving = false;
   } else {
     movePlayerSprite(state, pixelsToWalkThisUpdate);
   }
@@ -368,7 +370,8 @@ function createPlayer(scene) {
     previousPositionSentToServer: new Vector2(Infinity, Infinity),
     lastFootLeft: false,
     characterIndex,
-    movementDirection: 'none',
+    direction: 'down',
+    isMoving: false,
     tileSizePixelsWalked: 0,
     decimalPlacesLeft: 0,
   };
