@@ -74,7 +74,8 @@ export interface OtherPlayer {
   generation: PlayerGeneration,
   x: number,
   y: number,
-  sprite: Phaser.GameObjects.Sprite
+  sprite: Phaser.GameObjects.Sprite,
+  direction: Direction,
 }
 
 export interface State {

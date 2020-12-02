@@ -164,7 +164,7 @@ function maybeStartMovingCharacter(state) {
     if (desiredDirection) {
       // The player is starting to try and change a direction, always face that way.
       player.direction = desiredDirection;
-      // See if we can inatiate a move.
+      // See if we can initiate a move.
       player.isMoving = getPlayerCanMove(player, tilemap);
     }
   }
@@ -207,8 +207,49 @@ function updatePlayerAnimation(player) {
  */
 function updateOtherPlayersPositions(state) {
   for (const other of state.others.values()) {
-    other.sprite.x = lerp(other.sprite.x, other.x, 0.5);
-    other.sprite.y = lerp(other.sprite.y, other.y, 0.5);
+    const { sprite } = other;
+    const nextX = Math.round(lerp(sprite.x, other.x, 0.6));
+    const nextY = Math.round(lerp(sprite.y, other.y, 0.6));
+    const dx = nextX - sprite.x;
+    const dy = nextY - sprite.y;
+    sprite.x = nextX;
+    sprite.y = nextY;
+    const isMoving = dx !== 0 || dy !== 0;
+
+    // See if the sprite needs to change direction.
+    if (isMoving) {
+      if (Math.abs(dx) > Math.abs(dy)) {
+        other.direction = dx > 0 ? 'right' : 'left';
+      } else {
+        other.direction = dy > 0 ? 'down' : 'up';
+      }
+    }
+
+    const { leftFoot, standing, rightFoot } = getFrameIndexFromDirection(
+      1,
+      other.direction
+    );
+
+    if (isMoving) {
+      const walkingGateSize = TILE_SIZE * 2;
+      const position =
+        other.direction === 'up' || other.direction === 'down'
+          ? sprite.getCenter().y
+          : sprite.getCenter().x;
+      const ratioTileMoved = (position % walkingGateSize) / walkingGateSize;
+
+      if (ratioTileMoved < 1 / 4) {
+        sprite.setFrame(standing);
+      } else if (ratioTileMoved < 2 / 4) {
+        sprite.setFrame(leftFoot);
+      } else if (ratioTileMoved < 3 / 4) {
+        sprite.setFrame(standing);
+      } else {
+        sprite.setFrame(rightFoot);
+      }
+    } else {
+      sprite.setFrame(standing);
+    }
   }
 }
 
@@ -548,6 +589,7 @@ function readJsonMessage(state, message) {
           state.others.set(other.generation, {
             ...other,
             sprite: addSprite(state.scene),
+            direction: 'down',
           });
         }
       }
