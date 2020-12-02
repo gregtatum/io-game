@@ -19,8 +19,8 @@ import { $ } from './selectors.js';
  * @typedef {import('types').Player} Player
  */
 
-const CANVAS_WIDTH = 720;
-const CANVAS_HEIGHT = 528;
+// const CANVAS_WIDTH = 720;
+// const CANVAS_HEIGHT = 528;
 const TILE_SIZE = 48;
 const PLAYER_SPRITE_FRAME_WIDTH = 52;
 const PLAYER_SPRITE_FRAME_HEIGHT = 72;
@@ -32,6 +32,17 @@ const PLAYER_OFFSET_X = TILE_SIZE / 2;
 const PLAYER_OFFSET_Y =
   -((PLAYER_SPRITE_FRAME_HEIGHT * PLAYER_SCALE_FACTOR) % TILE_SIZE) / 2;
 const SPEED_PIXELS_PER_MS = TILE_SIZE / 250;
+const SCALE_PIXELS = 3;
+
+function getCanvasSize() {
+  // Making the canvas divisible by the scale of the pixels and 2 removes any tile
+  // seams.
+  const scale = SCALE_PIXELS * 2;
+  return {
+    width: Math.ceil(window.innerWidth / scale) * scale,
+    height: Math.ceil(window.innerHeight / scale) * scale,
+  };
+}
 
 getInitialState();
 
@@ -56,12 +67,13 @@ async function getInitialState() {
       preload: () => preload(game.scene.scenes[0]),
     },
     scale: {
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
-      autoCenter: Phaser.Scale.CENTER_BOTH,
+      width: getCanvasSize().width,
+      height: getCanvasSize().height,
+      // autoCenter: Phaser.Scale.CENTER_BOTH,
     },
     backgroundColor: '#48C4F8',
   });
+  manageGameScale(game);
 
   await createPromise;
 
@@ -93,6 +105,16 @@ async function getInitialState() {
   );
 
   return state;
+}
+
+/**
+ * @param {Phaser.Game} game
+ */
+function manageGameScale(game) {
+  window.addEventListener('resize', () => {
+    const { width, height } = getCanvasSize();
+    game.scale.resize(width, height);
+  });
 }
 
 /**

@@ -7,7 +7,7 @@ import { ensureExists } from '../client/shared/utils.js';
 function getEnv(key) {
   return ensureExists(
     process.env[key],
-    `Expected to find an ${key} environment variable.`
+    `The "${key}" environment variable was not set. Did you mean to run \`yarn start-dev\`?`
   );
 }
 
