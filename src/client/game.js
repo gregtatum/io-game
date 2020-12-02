@@ -327,7 +327,7 @@ function movePlayerSprite(state, speed) {
     // The player has walked half a tile.
     setStandingFrame(player);
   } else {
-    setWalkingFrame(state, player.direction);
+    setWalkingFrame(player);
   }
 
   player.tileSizePixelsWalked %= TILE_SIZE;
@@ -399,13 +399,14 @@ function createPlayer(scene) {
 }
 
 /**
- * @param {State} state
- * @param {Direction} direction
+ * @param {Player} player
  * @returns {void}
  */
-function setWalkingFrame(state, direction) {
-  const { player } = state;
-  const frameRow = getFrameIndexFromDirection(player.characterIndex, direction);
+function setWalkingFrame(player) {
+  const frameRow = getFrameIndexFromDirection(
+    player.characterIndex,
+    player.direction
+  );
   player.sprite.setFrame(
     player.lastFootLeft ? frameRow.rightFoot : frameRow.leftFoot
   );
