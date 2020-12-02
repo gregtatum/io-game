@@ -31,7 +31,7 @@ const PLAYER_FRAMES_PER_CHAR_COL = 4;
 const PLAYER_OFFSET_X = TILE_SIZE / 2;
 const PLAYER_OFFSET_Y =
   -((PLAYER_SPRITE_FRAME_HEIGHT * PLAYER_SCALE_FACTOR) % TILE_SIZE) / 2;
-const SPEED_PIXELS_PER_SECOND = TILE_SIZE * 4;
+const SPEED_PIXELS_PER_MS = TILE_SIZE / 250;
 
 getInitialState();
 
@@ -142,7 +142,7 @@ function setupTilemap(scene) {
 function update(state, _time, delta) {
   // Handle all of the player movement.
   maybeStartMovingCharacter(state);
-  updatePlayerPosition(state, delta);
+  updatePlayerPositionAndMovingStatus(state, delta);
   updatePlayerAnimation(state.player);
 
   // Handle all other entities
@@ -345,47 +345,40 @@ function getPlayerCanMove(player, tilemap) {
 
 /**
  * @param {State} state
- * @param {number} speed
- * @returns {void}
- */
-function movePlayerSprite(state, speed) {
-  const { player } = state;
-  const newPlayerPos = player.sprite
-    .getCenter()
-    .add(
-      getDirectionVector(player.direction).clone().multiply(new Vector2(speed))
-    );
-  player.sprite.setPosition(newPlayerPos.x, newPlayerPos.y);
-  player.tileSizePixelsWalked += speed;
-  player.tileSizePixelsWalked %= TILE_SIZE;
-}
-
-/**
- * @param {State} state
  * @param {number} delta
  * @returns {void}
  */
-function updatePlayerPosition(state, delta) {
+function updatePlayerPositionAndMovingStatus(state, delta) {
   const { player } = state;
   if (!player.isMoving) {
     // This player is not moving, no reason to update the position.
     return;
   }
-  const deltaInSeconds = delta / 1000;
-  const speedPerDelta = SPEED_PIXELS_PER_SECOND * deltaInSeconds;
 
-  player.decimalPlacesLeft = (speedPerDelta + player.decimalPlacesLeft) % 1;
-  const pixelsToWalkThisUpdate = Math.floor(
-    speedPerDelta + player.decimalPlacesLeft
-  );
+  // Compute the integral value of the pixels walked, and store the decimal part.
+  let pixelsInt;
+  {
+    const pixelsFloat = SPEED_PIXELS_PER_MS * delta + player.decimalPlacesLeft;
+    pixelsInt = Math.floor(pixelsFloat);
+    player.decimalPlacesLeft = pixelsFloat % 1;
+  }
 
-  if (player.tileSizePixelsWalked + pixelsToWalkThisUpdate >= TILE_SIZE) {
-    // Thie player will cross the tile border this update.
-    movePlayerSprite(state, TILE_SIZE - player.tileSizePixelsWalked);
+  if (player.pixelsWalkedInThisTile + pixelsInt >= TILE_SIZE) {
+    // The player will cross the tile border this update, only move the player
+    // enough to be at the correct tile position.
+    pixelsInt = TILE_SIZE - player.pixelsWalkedInThisTile;
+    player.pixelsWalkedInThisTile = 0;
     player.isMoving = false;
   } else {
-    movePlayerSprite(state, pixelsToWalkThisUpdate);
+    player.pixelsWalkedInThisTile = player.pixelsWalkedInThisTile + pixelsInt;
   }
+
+  const oldPosition = player.sprite.getCenter();
+  const directionVector = getDirectionVector(player.direction);
+  player.sprite.setPosition(
+    oldPosition.x + directionVector.x * pixelsInt,
+    oldPosition.y + directionVector.y * pixelsInt
+  );
 }
 
 /**
@@ -420,7 +413,7 @@ function createPlayer(scene) {
     characterIndex,
     direction: 'down',
     isMoving: false,
-    tileSizePixelsWalked: 0,
+    pixelsWalkedInThisTile: 0,
     decimalPlacesLeft: 0,
   };
 }

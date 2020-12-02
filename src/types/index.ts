@@ -40,7 +40,7 @@ export interface Player {
   characterIndex: number;
   direction: Direction;
   isMoving: boolean;
-  tileSizePixelsWalked: number;
+  pixelsWalkedInThisTile: number;
   decimalPlacesLeft: number;
 }
 
