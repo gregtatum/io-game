@@ -140,10 +140,31 @@ function setupTilemap(scene) {
  * @param {number} delta
  */
 function update(state, _time, delta) {
-  updatePlayerFromControls(state);
+  maybeStartMovingCharacter(state);
   updatePlayerPosition(state, delta);
   sendPlayerUpdate(state);
   updateOtherPlayersPositions(state);
+}
+
+/**
+ * This function only updates the isMoving and direction properties on the player.
+ * @param {State} state
+ */
+function maybeStartMovingCharacter(state) {
+  const { player, tilemap } = state;
+  if (!player.isMoving) {
+    // The player is not moving, and is free to change directions.
+    const desiredDirection = getDirectionFromControls(state);
+    if (desiredDirection) {
+      // The player is starting to try and change a direction, always face that way.
+      player.direction = desiredDirection;
+      // See if we can inatiate a move.
+      player.isMoving = getPlayerCanMove(player, tilemap);
+      if (!player.isMoving) {
+        setStandingFrame(player);
+      }
+    }
+  }
 }
 
 /**
@@ -229,18 +250,20 @@ function getDirectionVector(direction) {
 
 /**
  * @param {State} state
+ * @returns {Direction | null}
  */
-function updatePlayerFromControls(state) {
+function getDirectionFromControls(state) {
   const cursors = state.scene.input.keyboard.createCursorKeys();
   if (cursors.left && cursors.left.isDown) {
-    movePlayer(state, 'left');
+    return 'left';
   } else if (cursors.right && cursors.right.isDown) {
-    movePlayer(state, 'right');
+    return 'right';
   } else if (cursors.up && cursors.up.isDown) {
-    movePlayer(state, 'up');
+    return 'up';
   } else if (cursors.down && cursors.down.isDown) {
-    movePlayer(state, 'down');
+    return 'down';
   }
+  return null;
 }
 
 const Vector2 = Phaser.Math.Vector2;
@@ -249,18 +272,19 @@ const Vector2 = Phaser.Math.Vector2;
  * When the player is standing still, this function determines if the player
  * can continue moving in that direction.
  *
- * @param {State} state
- * @param {Direction} direction
- * @returns {void}
+ * @param {Player} player
+ * @param {Phaser.Tilemaps.Tilemap} tilemap
+ * @returns {boolean}
  */
-function movePlayer(state, direction) {
-  const { player, tilemap } = state;
+function getPlayerCanMove(player, tilemap) {
   if (player.isMoving) {
-    return;
+    throw new Error(
+      'The player is already moving, this function should not be called.'
+    );
   }
 
   // Compute the next tile position.
-  const { x, y } = getDirectionVector(direction);
+  const { x, y } = getDirectionVector(player.direction);
   const nextTileX =
     Math.floor((player.sprite.getCenter().x - PLAYER_OFFSET_X) / TILE_SIZE) + x;
   const nextTileY =
@@ -278,12 +302,9 @@ function movePlayer(state, direction) {
     })
   ) {
     // The player is trying to move into a blocked tile.
-    player.direction = direction;
-    player.isMoving = false;
-    setStandingFrame(state, direction);
+    return false;
   } else {
-    player.direction = direction;
-    player.isMoving = true;
+    return true;
   }
 }
 
@@ -304,7 +325,7 @@ function movePlayerSprite(state, speed) {
 
   if (player.tileSizePixelsWalked > TILE_SIZE / 2) {
     // The player has walked half a tile.
-    setStandingFrame(state, player.direction);
+    setStandingFrame(player);
   } else {
     setWalkingFrame(state, player.direction);
   }
@@ -391,21 +412,19 @@ function setWalkingFrame(state, direction) {
 }
 
 /**
- * @param {State} state
- * @param {Direction} direction
+ * @param {Player} player
  * @returns {void}
  */
-function setStandingFrame(state, direction) {
-  const { player } = state;
+function setStandingFrame(player) {
   if (
     // Is current frame standing?
     Number(player.sprite.frame.name) !=
-    getFrameIndexFromDirection(player.characterIndex, direction).standing
+    getFrameIndexFromDirection(player.characterIndex, player.direction).standing
   ) {
     player.lastFootLeft = !player.lastFootLeft;
   }
   player.sprite.setFrame(
-    getFrameIndexFromDirection(player.characterIndex, direction).standing
+    getFrameIndexFromDirection(player.characterIndex, player.direction).standing
   );
 }
 
