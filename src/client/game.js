@@ -140,10 +140,16 @@ function setupTilemap(scene) {
  * @param {number} delta
  */
 function update(state, _time, delta) {
+  // Handle all of the player movement.
   maybeStartMovingCharacter(state);
   updatePlayerPosition(state, delta);
-  sendPlayerUpdate(state);
+  updatePlayerAnimation(state.player);
+
+  // Handle all other entities
   updateOtherPlayersPositions(state);
+
+  // Notify the server of what happened.
+  sendPlayerUpdate(state);
 }
 
 /**
@@ -160,10 +166,39 @@ function maybeStartMovingCharacter(state) {
       player.direction = desiredDirection;
       // See if we can inatiate a move.
       player.isMoving = getPlayerCanMove(player, tilemap);
-      if (!player.isMoving) {
-        setStandingFrame(player);
-      }
     }
+  }
+}
+
+/**
+ * @param {Player} player
+ */
+function updatePlayerAnimation(player) {
+  const { sprite, characterIndex, direction, isMoving } = player;
+  const { leftFoot, standing, rightFoot } = getFrameIndexFromDirection(
+    characterIndex,
+    direction
+  );
+
+  if (isMoving) {
+    const walkingGateSize = TILE_SIZE * 2;
+    const position =
+      direction === 'up' || direction === 'down'
+        ? sprite.getCenter().y
+        : sprite.getCenter().x;
+    const ratioTileMoved = (position % walkingGateSize) / walkingGateSize;
+
+    if (ratioTileMoved < 1 / 4) {
+      sprite.setFrame(standing);
+    } else if (ratioTileMoved < 2 / 4) {
+      sprite.setFrame(leftFoot);
+    } else if (ratioTileMoved < 3 / 4) {
+      sprite.setFrame(standing);
+    } else {
+      sprite.setFrame(rightFoot);
+    }
+  } else {
+    sprite.setFrame(standing);
   }
 }
 
@@ -322,14 +357,6 @@ function movePlayerSprite(state, speed) {
     );
   player.sprite.setPosition(newPlayerPos.x, newPlayerPos.y);
   player.tileSizePixelsWalked += speed;
-
-  if (player.tileSizePixelsWalked > TILE_SIZE / 2) {
-    // The player has walked half a tile.
-    setStandingFrame(player);
-  } else {
-    setWalkingFrame(player);
-  }
-
   player.tileSizePixelsWalked %= TILE_SIZE;
 }
 
@@ -396,37 +423,6 @@ function createPlayer(scene) {
     tileSizePixelsWalked: 0,
     decimalPlacesLeft: 0,
   };
-}
-
-/**
- * @param {Player} player
- * @returns {void}
- */
-function setWalkingFrame(player) {
-  const frameRow = getFrameIndexFromDirection(
-    player.characterIndex,
-    player.direction
-  );
-  player.sprite.setFrame(
-    player.lastFootLeft ? frameRow.rightFoot : frameRow.leftFoot
-  );
-}
-
-/**
- * @param {Player} player
- * @returns {void}
- */
-function setStandingFrame(player) {
-  if (
-    // Is current frame standing?
-    Number(player.sprite.frame.name) !=
-    getFrameIndexFromDirection(player.characterIndex, player.direction).standing
-  ) {
-    player.lastFootLeft = !player.lastFootLeft;
-  }
-  player.sprite.setFrame(
-    getFrameIndexFromDirection(player.characterIndex, player.direction).standing
-  );
 }
 
 /**
