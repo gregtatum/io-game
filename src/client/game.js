@@ -79,8 +79,8 @@ async function getInitialState() {
 
   /** @type {Phaser.Scene} */
   const scene = game.scene.scenes[0];
-  const tilemap = setupTilemap(scene);
-  const player = createPlayer(scene);
+  const { tilemap, tilemapObjects } = setupTilemap(scene);
+  const player = createPlayer(scene, tilemap, tilemapObjects);
 
   /** @type {State} */
   const state = {
@@ -132,28 +132,49 @@ function createDeferredPromise() {
 
 /**
  * @param {Phaser.Scene} scene
+ * @param {Phaser.Tilemaps.Tilemap} tilemap
  * @returns {Phaser.GameObjects.Sprite}
  */
-function addSprite(scene) {
+function addSprite(scene, tilemap) {
+  const playerLayer = ensureExists(
+    tilemap.getLayer('Player'),
+    'Could not find the Player layer'
+  );
   const sprite = scene.add.sprite(0, 0, 'player');
-  sprite.setDepth(2);
+  sprite.setDepth(playerLayer.tilemapLayer.depth);
   sprite.scale = PLAYER_SCALE_FACTOR;
   return sprite;
 }
 
 /**
  * @param {Phaser.Scene} scene
- * @returns {Phaser.Tilemaps.Tilemap}
  */
 function setupTilemap(scene) {
-  const tilemap = scene.make.tilemap({ key: 'cloud-city-map' });
-  tilemap.addTilesetImage('Cloud City', 'tiles');
+  const tilemap = scene.make.tilemap({ key: 'interior-tilemap' });
+  const tilesets = [
+    tilemap.addTilesetImage('Interiors_16x16', 'interiors'),
+    tilemap.addTilesetImage('Tileset_16x16_8', 'tileset'),
+  ];
+
+  /** @type {Phaser.Tilemaps.StaticTilemapLayer | null} */
+  // Go through all the layers in the tilemap's JSON, and turn in them into Phaser
+  // static layers.
   for (let i = 0; i < tilemap.layers.length; i++) {
-    const layer = tilemap.createStaticLayer(i, 'Cloud City', 0, 0);
-    layer.setDepth(i);
-    layer.scale = 3;
+    const layerData = tilemap.layers[i];
+    const staticLayer = tilemap.createStaticLayer(i, tilesets, 0, 0);
+    staticLayer.setDepth(i);
+    staticLayer.scale = SCALE_PIXELS;
+    staticLayer.visible = layerData.visible;
   }
-  return tilemap;
+  ensureExists(
+    tilemap.getLayer('Blocking'),
+    'Expected to find a Blocking layer in the tilemap'
+  ).tilemapLayer.visible = false;
+
+  return {
+    tilemap,
+    tilemapObjects: ensureExists(tilemap.objects[0]).objects,
+  };
 }
 
 /**
@@ -279,8 +300,21 @@ function updateOtherPlayersPositions(state) {
  * @param {Phaser.Scene} scene
  */
 function preload(scene) {
-  scene.load.image('tiles', 'assets/cloud_tileset.png');
-  scene.load.tilemapTiledJSON('cloud-city-map', 'assets/cloud_city.json');
+  // scene.load.images('interiors', 'assets/cloud_tileset.png');
+  scene.load.image(
+    'interiors',
+    'assets/Modern_Interiors/1_Tilesets/16x16/Interiors_16x16.png'
+  );
+  scene.load.image(
+    'tileset',
+    'assets/Modern_Interiors/1_Tilesets/16x16/Tileset_16x16_8.png'
+  );
+
+  scene.load.tilemapTiledJSON(
+    'interior-tilemap',
+    'assets/tilemaps/interior.json'
+  );
+
   scene.load.spritesheet('player', 'assets/characters.png', {
     frameWidth: PLAYER_SPRITE_FRAME_WIDTH,
     frameHeight: PLAYER_SPRITE_FRAME_HEIGHT,
@@ -388,22 +422,7 @@ function getPlayerCanMove(player, tilemap) {
   const nextTileY =
     Math.floor((player.sprite.getCenter().y - PLAYER_OFFSET_Y) / TILE_SIZE) + y;
 
-  if (
-    // For the next tile position, is there no tile?
-    !tilemap.layers.some((layer) =>
-      tilemap.hasTileAt(nextTileX, nextTileY, layer.name)
-    ) ||
-    // Is the next tile a colliding tile?
-    tilemap.layers.some((layer) => {
-      const tile = tilemap.getTileAt(nextTileX, nextTileY, false, layer.name);
-      return tile && tile.properties.collides;
-    })
-  ) {
-    // The player is trying to move into a blocked tile.
-    return false;
-  } else {
-    return true;
-  }
+  return !tilemap.hasTileAt(nextTileX, nextTileY, 'Blocking');
 }
 
 /**
@@ -453,19 +472,23 @@ function updatePlayerPositionAndMovingStatus(state, delta) {
 
 /**
  * @param {Phaser.Scene} scene
+ * @param {Phaser.Tilemaps.Tilemap} tilemap
+ * @param {Phaser.Types.Tilemaps.TiledObject[]} objects
  * @returns {Player}
  */
-function createPlayer(scene) {
-  const sprite = addSprite(scene);
+function createPlayer(scene, tilemap, objects) {
+  const sprite = addSprite(scene, tilemap);
   scene.cameras.main.startFollow(sprite);
+  const { x, y } = ensureExists(
+    objects.find((o) => o.name === 'spawn'),
+    'Could not find the spawn point for the tilemap'
+  );
 
-  const characterIndex = 6;
-  const startTilePosX = 8;
-  const startTilePosY = 8;
+  const characterIndex = Math.floor(Math.random() * 8);
 
   sprite.setPosition(
-    startTilePosX * TILE_SIZE + PLAYER_OFFSET_X,
-    startTilePosY * TILE_SIZE + PLAYER_OFFSET_Y
+    ensureExists(x) * SCALE_PIXELS + PLAYER_OFFSET_X,
+    ensureExists(y) * SCALE_PIXELS + PLAYER_OFFSET_Y
   );
   sprite.setFrame(getFrameIndexFromDirection(characterIndex, 'down').standing);
 
@@ -596,7 +619,7 @@ function readJsonMessage(state, message) {
         for (const other of message.others) {
           others.set(other.generation, {
             ...other,
-            sprite: addSprite(state.scene),
+            sprite: addSprite(state.scene, state.tilemap),
           });
         }
         state.others = others;
@@ -610,7 +633,7 @@ function readJsonMessage(state, message) {
         if (other.generation !== state.generation) {
           state.others.set(other.generation, {
             ...other,
-            sprite: addSprite(state.scene),
+            sprite: addSprite(state.scene, state.tilemap),
             direction: 'down',
           });
         }
