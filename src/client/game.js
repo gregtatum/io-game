@@ -136,12 +136,12 @@ function createDeferredPromise() {
  * @returns {Phaser.GameObjects.Sprite}
  */
 function addSprite(scene, tilemap) {
-  const playerLayer = ensureExists(
-    tilemap.getLayer('Player'),
-    'Could not find the Player layer'
+  const spritesLayer = ensureExists(
+    tilemap.getLayer('Sprites'),
+    'Could not find the Sprites layer'
   );
   const sprite = scene.add.sprite(0, 0, 'player');
-  sprite.setDepth(playerLayer.tilemapLayer.depth);
+  sprite.setDepth(spritesLayer.tilemapLayer.depth);
   sprite.scale = PLAYER_SCALE_FACTOR;
   return sprite;
 }
@@ -293,6 +293,7 @@ function updateOtherPlayersPositions(state) {
     } else {
       sprite.setFrame(standing);
     }
+    setSpriteDepth(state, sprite);
   }
 }
 
@@ -457,10 +458,27 @@ function updatePlayerPositionAndMovingStatus(state, delta) {
 
   const oldPosition = player.sprite.getCenter();
   const directionVector = getDirectionVector(player.direction);
-  player.sprite.setPosition(
+  const { sprite } = player;
+
+  sprite.setPosition(
     oldPosition.x + directionVector.x * pixelsInt,
     oldPosition.y + directionVector.y * pixelsInt
   );
+
+  setSpriteDepth(state, sprite);
+}
+
+/**
+ * @param {State} state
+ * @param {Phaser.GameObjects.Sprite} sprite
+ */
+function setSpriteDepth(state, sprite) {
+  const spriteLayerDepth = ensureExists(
+    state.tilemap.getLayer('Sprites'),
+    'Could not find the Sprites layer.'
+  ).tilemapLayer.depth;
+
+  sprite.setDepth(spriteLayerDepth + (1 - 1 / sprite.y));
 }
 
 /**
