@@ -133,9 +133,10 @@ function createDeferredPromise() {
 /**
  * @param {Phaser.Scene} scene
  * @param {Phaser.Tilemaps.Tilemap} tilemap
+ * @param {{x: number, y: number}} [position]
  * @returns {Phaser.GameObjects.Sprite}
  */
-function addSprite(scene, tilemap) {
+function addSprite(scene, tilemap, position) {
   const spritesLayer = ensureExists(
     tilemap.getLayer('Sprites'),
     'Could not find the Sprites layer'
@@ -143,6 +144,10 @@ function addSprite(scene, tilemap) {
   const sprite = scene.add.sprite(0, 0, 'player');
   sprite.setDepth(spritesLayer.tilemapLayer.depth);
   sprite.scale = PLAYER_SCALE_FACTOR;
+  if (position) {
+    sprite.x = position.x;
+    sprite.y = position.y;
+  }
   return sprite;
 }
 
@@ -637,7 +642,8 @@ function readJsonMessage(state, message) {
         for (const other of message.others) {
           others.set(other.generation, {
             ...other,
-            sprite: addSprite(state.scene, state.tilemap),
+            sprite: addSprite(state.scene, state.tilemap, other),
+            direction: 'down',
           });
         }
         state.others = others;
@@ -649,9 +655,10 @@ function readJsonMessage(state, message) {
         // This message is broadcast to everyone, so only add
         // it if it's not the current player.
         if (other.generation !== state.generation) {
+          const sprite = addSprite(state.scene, state.tilemap, other);
           state.others.set(other.generation, {
             ...other,
-            sprite: addSprite(state.scene, state.tilemap),
+            sprite,
             direction: 'down',
           });
         }
