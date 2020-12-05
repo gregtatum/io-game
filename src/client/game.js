@@ -17,6 +17,7 @@ import { $ } from './selectors.js';
  * @typedef {import("types").State} State
  * @typedef {import('types').OtherPlayer} OtherPlayer
  * @typedef {import('types').Player} Player
+ * @typedef {import('types').TiledMapJSON} TiledMapJSON
  */
 
 // const CANVAS_WIDTH = 720;
@@ -47,10 +48,19 @@ function getCanvasSize() {
 getInitialState();
 
 /**
+ * @returns {Promise<TiledMapJSON>}
+ */
+async function getTileMap() {
+  const response = await fetch('assets/tilemaps/interior.json');
+  return response.json();
+}
+
+/**
  * @returns {Promise<State>}
  */
 async function getInitialState() {
   const { resolve, promise: createPromise } = createDeferredPromise();
+  const tileMapJson = await getTileMap();
 
   /** @type {Phaser.Game} */
   const game = new Phaser.Game({
@@ -64,7 +74,7 @@ async function getInitialState() {
       visible: false,
       key: 'Game',
       create: resolve,
-      preload: () => preload(game.scene.scenes[0]),
+      preload: () => preload(game.scene.scenes[0], tileMapJson),
     },
     scale: {
       width: getCanvasSize().width,
@@ -79,8 +89,17 @@ async function getInitialState() {
 
   /** @type {Phaser.Scene} */
   const scene = game.scene.scenes[0];
-  const { tilemap, tilemapObjects } = setupTilemap(scene);
+  const { tilemap, tilemapObjects } = setupTilemap(scene, tileMapJson);
   const player = createPlayer(scene, tilemap, tilemapObjects);
+
+  // const text = new Phaser.GameObjects.Text(
+  //   scene,
+  //   player.sprite.x,
+  //   player.sprite.y,
+  //   'This is text',
+  //   { fontSize: '12px', color: '#000' }
+  // );
+  // scene.add(text);
 
   /** @type {State} */
   const state = {
@@ -153,13 +172,18 @@ function addSprite(scene, tilemap, position) {
 
 /**
  * @param {Phaser.Scene} scene
+ * @param {TiledMapJSON} json
  */
-function setupTilemap(scene) {
-  const tilemap = scene.make.tilemap({ key: 'interior-tilemap' });
-  const tilesets = [
-    tilemap.addTilesetImage('Interiors_16x16', 'interiors'),
-    tilemap.addTilesetImage('Tileset_16x16_8', 'tileset'),
-  ];
+function setupTilemap(scene, json) {
+  const mapData = Phaser.Tilemaps.Parsers.Tiled.ParseJSONTiled(
+    'tilemap',
+    json,
+    true
+  );
+  const tilemap = new Phaser.Tilemaps.Tilemap(scene, mapData);
+  const tilesets = json.tilesets.map(({ name }) =>
+    tilemap.addTilesetImage(name, name)
+  );
 
   /** @type {Phaser.Tilemaps.StaticTilemapLayer | null} */
   // Go through all the layers in the tilemap's JSON, and turn in them into Phaser
@@ -192,6 +216,10 @@ function update(state, _time, delta) {
   maybeStartMovingCharacter(state);
   updatePlayerPositionAndMovingStatus(state, delta);
   updatePlayerAnimation(state.player);
+
+  // TODO - Only do this occasionally.
+  window.localStorage.playerPositionX = state.player.sprite.x;
+  window.localStorage.playerPositionY = state.player.sprite.y;
 
   // Handle all other entities
   updateOtherPlayersPositions(state);
@@ -304,22 +332,12 @@ function updateOtherPlayersPositions(state) {
 
 /**
  * @param {Phaser.Scene} scene
+ * @param {TiledMapJSON} tiledMapJson
  */
-function preload(scene) {
-  // scene.load.images('interiors', 'assets/cloud_tileset.png');
-  scene.load.image(
-    'interiors',
-    'assets/Modern_Interiors/1_Tilesets/16x16/Interiors_16x16.png'
-  );
-  scene.load.image(
-    'tileset',
-    'assets/Modern_Interiors/1_Tilesets/16x16/Tileset_16x16_8.png'
-  );
-
-  scene.load.tilemapTiledJSON(
-    'interior-tilemap',
-    'assets/tilemaps/interior.json'
-  );
+function preload(scene, tiledMapJson) {
+  for (const { image, name } of tiledMapJson.tilesets) {
+    scene.load.image(name, 'assets/tilemaps/' + image);
+  }
 
   scene.load.spritesheet('player', 'assets/characters.png', {
     frameWidth: PLAYER_SPRITE_FRAME_WIDTH,
@@ -509,10 +527,16 @@ function createPlayer(scene, tilemap, objects) {
 
   const characterIndex = Math.floor(Math.random() * 8);
 
-  sprite.setPosition(
-    ensureExists(x) * SCALE_PIXELS + PLAYER_OFFSET_X,
-    ensureExists(y) * SCALE_PIXELS + PLAYER_OFFSET_Y
-  );
+  const { playerPositionX, playerPositionY } = window.localStorage;
+  if (playerPositionX) {
+    sprite.setPosition(playerPositionX, playerPositionY);
+  } else {
+    sprite.setPosition(
+      ensureExists(x) * SCALE_PIXELS + PLAYER_OFFSET_X,
+      ensureExists(y) * SCALE_PIXELS + PLAYER_OFFSET_Y
+    );
+  }
+
   sprite.setFrame(getFrameIndexFromDirection(characterIndex, 'down').standing);
 
   return {

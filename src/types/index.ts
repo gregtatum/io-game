@@ -89,3 +89,49 @@ export interface State {
 }
 
 export type Selector<T> = (state: State) => T;
+
+export type TiledMapJSON = {
+  compressionlevel: number,
+  editorsettings: {
+    export: { format: "json", target: "interior.json" }
+  },
+  tileheight: number,
+  tilewidth: number,
+  height: number,
+  width: number,
+  infinite: boolean,
+  layers: Array<{
+    compression: string,
+    data: number[],
+    height: number,
+    width: number,
+    x: number,
+    y: number,
+    id: number,
+    name: string, // e.g. "Floor1",
+    opacity: number,
+    type: "tilelayer",
+    visible: boolean,
+  }>,
+  nextlayerid: number,
+  nextobjectid: number,
+  orientation: string, // "orthogonal",
+  renderorder: string, // "right-down",
+  tiledversion: number, // "1.4.3",
+  tilesets: Array<{
+    image: string, // "images/art.png",
+    name: string, // "art",
+    columns: number,
+    firstgid: number,
+    imageheight: number,
+    imagewidth: number,
+    margin: number,
+    spacing: number,
+    tilecount: number,
+    tileheight: number,
+    tilewidth: number,
+    lastgid: number
+  }>,
+  type: "map",
+  version: number,
+}
