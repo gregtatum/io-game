@@ -5,6 +5,7 @@ import {
   setDebugGlobal,
   lerp,
   ensureExists,
+  hsl,
 } from './shared/utils.js';
 import { $ } from './selectors.js';
 
@@ -79,9 +80,8 @@ async function getInitialState() {
     scale: {
       width: getCanvasSize().width,
       height: getCanvasSize().height,
-      // autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-    backgroundColor: '#48C4F8',
+    backgroundColor: 0x264557,
   });
   manageGameScale(game);
 
@@ -92,15 +92,6 @@ async function getInitialState() {
   const { tilemap, tilemapObjects } = setupTilemap(scene, tileMapJson);
   const player = createPlayer(scene, tilemap, tilemapObjects);
 
-  // const text = new Phaser.GameObjects.Text(
-  //   scene,
-  //   player.sprite.x,
-  //   player.sprite.y,
-  //   'This is text',
-  //   { fontSize: '12px', color: '#000' }
-  // );
-  // scene.add(text);
-
   /** @type {State} */
   const state = {
     socket: null,
@@ -109,9 +100,24 @@ async function getInitialState() {
     scene,
     player,
     tilemap,
+    hud: {
+      textBackdrop: {
+        graphics: scene.add.graphics(),
+        width: 300,
+        height: 64,
+        margin: 10,
+      },
+      text: {
+        object: scene.add.text(0, 0, ''),
+        size: 6,
+        margin: 6,
+        lineSpacing: 8,
+      },
+    },
     others: new Map(),
   };
 
+  setupHUD(state);
   startWebSocket(state);
   setDebugGlobal('state', state);
 
@@ -124,6 +130,74 @@ async function getInitialState() {
   );
 
   return state;
+}
+
+/**
+ * @param {State} state
+ */
+function setupHUD(state) {
+  const { hud } = state;
+  const { textBackdrop, text } = hud;
+  const { graphics, width, height } = textBackdrop;
+  const depth = $.getHudDepth(state);
+
+  {
+    graphics.setScale(SCALE_PIXELS);
+    // Build the background as a stepped gradient.
+    const steps = 7;
+    const stepHeight = height / steps;
+    const h = 0.56;
+    const s = 0.97;
+    for (let i = 0; i < steps; i++) {
+      const l = lerp(0.5, 0.35, i / steps);
+      graphics.fillStyle(hsl(h, s, l));
+      graphics.fillRect(0, stepHeight * i, width, stepHeight);
+    }
+
+    // Create the border.
+    graphics.lineStyle(1, hsl(h, s, 0.3));
+    graphics.strokeRoundedRect(1, 1, width - 2, height - 2, 2);
+    graphics.lineStyle(1, hsl(h, s, 0.8));
+    graphics.strokeRoundedRect(0, 0, width, height, 2);
+  }
+
+  text.object.setStyle({
+    fontFamily: 'dogica',
+    fontSize: text.size * SCALE_PIXELS + 'px',
+    color: '#fff',
+  });
+  text.object.setLineSpacing(text.lineSpacing);
+  text.object.setWordWrapWidth((width - text.margin * 2) * SCALE_PIXELS);
+  text.object.setText(
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis posuere, leo a posuere rutrum, leo lorem facilisis tellus, eu aliquet tortor massa sed risus. Nullam pulvinar lobortis interdum. Proin ut faucibus turpis, ac aliquam metus. Sed mauris libero.'
+  );
+
+  text.object.setDepth(depth + 0.1);
+  graphics.setDepth(depth);
+  // Make everything follow the camera.
+  text.object.setScrollFactor(0);
+  graphics.setScrollFactor(0);
+}
+
+/**
+ * @param {State} state
+ */
+function updateHUD(state) {
+  const { textBackdrop, text } = state.hud;
+
+  const gameWidth = $.getGameWidth(state);
+  const gameHeight = $.getGameHeight(state);
+
+  const { graphics, width, height } = textBackdrop;
+  const pixelsWidth = width * SCALE_PIXELS;
+  const pixelsHeight = height * SCALE_PIXELS;
+  const x = gameWidth / 2 - pixelsWidth / 2;
+  const y = gameHeight - pixelsHeight - textBackdrop.margin * SCALE_PIXELS;
+  graphics.setPosition(x, y);
+  text.object.setPosition(
+    x + text.margin * SCALE_PIXELS,
+    y + text.margin * SCALE_PIXELS
+  );
 }
 
 /**
@@ -223,6 +297,7 @@ function update(state, _time, delta) {
 
   // Handle all other entities
   updateOtherPlayersPositions(state);
+  updateHUD(state);
 
   // Notify the server of what happened.
   sendPlayerUpdate(state);

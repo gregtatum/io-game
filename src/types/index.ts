@@ -91,6 +91,20 @@ export interface State {
   player: Player;
   tilemap: Phaser.Tilemaps.Tilemap;
   others: Map<number, OtherPlayer>;
+  hud: {
+    textBackdrop: {
+      graphics: Phaser.GameObjects.Graphics;
+      width: number,
+      height: number,
+      margin: number,
+    },
+    text: {
+      object: Phaser.GameObjects.Text,
+      size: number,
+      margin: number,
+      lineSpacing: number,
+    }
+  };
 }
 
 export type Selector<T> = (state: State) => T;

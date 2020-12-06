@@ -350,3 +350,43 @@ export function setDebugGlobal(key, value) {
 export function lerp(a, b, t) {
   return a * (1 - t) + b * t;
 }
+
+/**
+ * @param {number} p
+ * @param {number} q
+ * @param {number} t
+ */
+function hueToRgb(p, q, t) {
+  if (t < 0) t += 1;
+  if (t > 1) t -= 1;
+  if (t < 1 / 6) return p + (q - p) * 6 * t;
+  if (t < 1 / 2) return q;
+  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+  return p;
+}
+
+/**
+ * @param {number} h
+ * @param {number} s
+ * @param {number} l
+ */
+export function hsl(h, s, l) {
+  var r, g, b;
+
+  // achromatic
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    var p = 2 * l - q;
+    r = hueToRgb(p, q, h + 1 / 3);
+    g = hueToRgb(p, q, h);
+    b = hueToRgb(p, q, h - 1 / 3);
+  }
+
+  var r255 = (r * 255) | 0;
+  var g255 = (g * 255) | 0;
+  var b255 = (b * 255) | 0;
+
+  return (r255 << 16) | (g255 << 8) | b255;
+}
