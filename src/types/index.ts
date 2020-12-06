@@ -7,7 +7,8 @@ export type SimpleVector2 = { x: number, y: number };
 export type OtherPlayerSerialized = {
   generation: PlayerGeneration,
   x: number,
-  y: number
+  y: number,
+  characterIndex: number,
 }
 
 export type ServerToClient =
@@ -27,6 +28,7 @@ export type ServerToClient =
 
 export interface ServerPlayer {
   socket: WebSocketServer,
+  characterIndex: number,
   generation: PlayerGeneration,
   position: SimpleVector2;
   tickGeneration: number,
@@ -42,6 +44,7 @@ export interface Player {
   isMoving: boolean;
   pixelsWalkedInThisTile: number;
   decimalPlacesLeft: number;
+  speed: number,
 }
 
 export type Direction =
@@ -56,7 +59,8 @@ export type Direction =
 export type BroadcastTag = "broadcast-tick" | "player-update";
 
 export type ClientToServer =
-  { type: 'tick', x: number, y: number };
+  | { type: 'hello-back', characterIndex: number }
+  | { type: 'tick', x: number, y: number };
 
 export type TypedArray =
  | typeof Int8Array
@@ -76,6 +80,7 @@ export interface OtherPlayer {
   y: number,
   sprite: Phaser.GameObjects.Sprite,
   direction: Direction,
+  characterIndex: number,
 }
 
 export interface State {

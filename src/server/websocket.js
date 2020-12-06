@@ -51,12 +51,11 @@ function createNewPlayer(socket) {
   const player = {
     socket,
     generation,
+    characterIndex: 0,
     position: { x: 0, y: 0 },
     tickGeneration: 0,
     sendMessage,
   };
-
-  players.set(generation, player);
 
   return player;
 }
@@ -69,8 +68,8 @@ let intervalId;
  */
 function handleWebSocketConnection(socket) {
   const others = [];
-  for (const { generation, position } of players.values()) {
-    others.push({ generation, x: position.x, y: position.y });
+  for (const { generation, position, characterIndex } of players.values()) {
+    others.push({ generation, x: position.x, y: position.y, characterIndex });
   }
   const player = createNewPlayer(socket);
 
@@ -87,7 +86,7 @@ function handleWebSocketConnection(socket) {
     /** @type {any} */
     let json;
     try {
-      const json = JSON.parse(messageRaw);
+      json = JSON.parse(messageRaw);
       if (!json || typeof json !== 'object') {
         console.error('Unknown message', messageRaw);
         return;
@@ -106,15 +105,6 @@ function handleWebSocketConnection(socket) {
     type: 'hello',
     generation: player.generation,
     others,
-  });
-
-  broadcastJson({
-    type: 'other-joined',
-    other: {
-      x: 0,
-      y: 0,
-      generation: player.generation,
-    },
   });
 
   if (players.size === 1) {
@@ -194,6 +184,21 @@ function handleJsonMessage(message, player) {
       const { x, y } = message;
       player.position.x = x;
       player.position.y = y;
+      break;
+    }
+    case 'hello-back': {
+      player.characterIndex = message.characterIndex;
+      players.set(player.generation, player);
+      // Only broadcast that this player joined after they send the initial hello.
+      broadcastJson({
+        type: 'other-joined',
+        other: {
+          x: 0,
+          y: 0,
+          characterIndex: player.characterIndex,
+          generation: player.generation,
+        },
+      });
       break;
     }
     default:

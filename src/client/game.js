@@ -302,7 +302,7 @@ function updateOtherPlayersPositions(state) {
     }
 
     const { leftFoot, standing, rightFoot } = getFrameIndexFromDirection(
-      1,
+      other.characterIndex,
       other.direction
     );
 
@@ -464,7 +464,7 @@ function updatePlayerPositionAndMovingStatus(state, delta) {
   // Compute the integral value of the pixels walked, and store the decimal part.
   let pixelsInt;
   {
-    const pixelsFloat = SPEED_PIXELS_PER_MS * delta + player.decimalPlacesLeft;
+    const pixelsFloat = player.speed * delta + player.decimalPlacesLeft;
     pixelsInt = Math.floor(pixelsFloat);
     player.decimalPlacesLeft = pixelsFloat % 1;
   }
@@ -548,6 +548,7 @@ function createPlayer(scene, tilemap, objects) {
     isMoving: false,
     pixelsWalkedInThisTile: 0,
     decimalPlacesLeft: 0,
+    speed: SPEED_PIXELS_PER_MS,
   };
 }
 
@@ -615,6 +616,14 @@ function sendPlayerUpdate(state) {
 
 /**
  * @param {State} state
+ * @param {ClientToServer} message
+ */
+function sendJsonToServer(state, message) {
+  ensureExists(state.socket).send(JSON.stringify(message));
+}
+
+/**
+ * @param {State} state
  * @param {ArrayBuffer} data
  */
 function readBinaryMessage(state, data) {
@@ -671,6 +680,11 @@ function readJsonMessage(state, message) {
           });
         }
         state.others = others;
+
+        sendJsonToServer(state, {
+          type: 'hello-back',
+          characterIndex: state.player.characterIndex,
+        });
       }
       break;
     case 'other-joined':
