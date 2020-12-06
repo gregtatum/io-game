@@ -100,20 +100,8 @@ async function getInitialState() {
     scene,
     player,
     tilemap,
-    hud: {
-      textBackdrop: {
-        graphics: scene.add.graphics(),
-        width: 300,
-        height: 64,
-        margin: 10,
-      },
-      text: {
-        object: scene.add.text(0, 0, ''),
-        size: 6,
-        margin: 6,
-        lineSpacing: 8,
-      },
-    },
+    keys: createKeys(scene),
+    hud: createUninitializedHUD(scene),
     others: new Map(),
   };
 
@@ -130,6 +118,41 @@ async function getInitialState() {
   );
 
   return state;
+}
+
+/**
+ * @param {Phaser.Scene} scene
+ * The return type is inferred.
+ */
+export function createUninitializedHUD(scene) {
+  /** @type {string | null} */
+  const message = null;
+
+  return {
+    message,
+    textBackdrop: {
+      graphics: scene.add.graphics(),
+      width: 300,
+      height: 64,
+      margin: 10,
+    },
+    text: {
+      object: scene.add.text(0, 0, ''),
+      size: 6,
+      margin: 6,
+      lineSpacing: 8,
+    },
+  };
+}
+
+/**
+ * @param {Phaser.Scene} scene
+ * The return type is inferred
+ */
+export function createKeys(scene) {
+  return {
+    spacebar: scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
+  };
 }
 
 /**
@@ -177,6 +200,9 @@ function setupHUD(state) {
   // Make everything follow the camera.
   text.object.setScrollFactor(0);
   graphics.setScrollFactor(0);
+
+  text.object.visible = false;
+  textBackdrop.graphics.visible = false;
 }
 
 /**
@@ -297,6 +323,7 @@ function update(state, _time, delta) {
 
   // Handle all other entities
   updateOtherPlayersPositions(state);
+  handlePlayerAction(state);
   updateHUD(state);
 
   // Notify the server of what happened.
@@ -309,6 +336,10 @@ function update(state, _time, delta) {
  */
 function maybeStartMovingCharacter(state) {
   const { player, tilemap } = state;
+  if (state.hud.message) {
+    // Do not move the player while there is a message displayed.
+    return;
+  }
   if (!player.isMoving) {
     // The player is not moving, and is free to change directions.
     const desiredDirection = getDirectionFromControls(state);
@@ -319,6 +350,78 @@ function maybeStartMovingCharacter(state) {
       player.isMoving = getPlayerCanMove(player, tilemap);
     }
   }
+}
+
+/**
+ * @param {State} state
+ */
+function handlePlayerAction(state) {
+  const { keys, player } = state;
+
+  if (!Phaser.Input.Keyboard.JustDown(keys.spacebar)) {
+    return;
+  }
+
+  if (state.hud.message) {
+    // There is a message showing, do nothing else.
+    hideHudMessage(state);
+    return;
+  }
+
+  const getObjectsAtXY = $.getObjectsAtXYGetter(state);
+  const { x, y } = getDirectionVector(player.direction);
+  const nextTileX = Math.floor(
+    (player.sprite.getCenter().x - PLAYER_OFFSET_X + x * TILE_SIZE) /
+      SCALE_PIXELS
+  );
+  const nextTileY = Math.floor(
+    (player.sprite.getCenter().y - PLAYER_OFFSET_Y + y * TILE_SIZE) /
+      SCALE_PIXELS
+  );
+  const objects = getObjectsAtXY(nextTileX, nextTileY);
+  for (const object of objects) {
+    switch (object.type) {
+      case 'message':
+        {
+          const messageProperty = object.properties.find(
+            /** @param {any} prop */
+            (prop) => prop.name === 'message' && prop.type === 'string'
+          );
+          if (!messageProperty) {
+            console.error(object);
+            throw new Error(
+              'A message object was found that did not have a message.'
+            );
+          }
+          showHudMessage(state, messageProperty.value);
+        }
+        break;
+      default:
+      // Do nothing.
+    }
+  }
+}
+
+/**
+ * @param {State} state
+ * @param {string} message
+ */
+function showHudMessage(state, message) {
+  const { text, textBackdrop } = state.hud;
+  text.object.visible = true;
+  textBackdrop.graphics.visible = true;
+  text.object.setText(message);
+  state.hud.message = message;
+}
+
+/**
+ * @param {State} state
+ */
+function hideHudMessage(state) {
+  const { text, textBackdrop } = state.hud;
+  text.object.visible = false;
+  textBackdrop.graphics.visible = false;
+  state.hud.message = null;
 }
 
 /**

@@ -1,4 +1,5 @@
 import WebSocketServer from 'ws';
+import { createUninitializedHUD, createKeys } from '../client/game';
 
 export type PlayerGeneration = number;
 
@@ -91,20 +92,9 @@ export interface State {
   player: Player;
   tilemap: Phaser.Tilemaps.Tilemap;
   others: Map<number, OtherPlayer>;
-  hud: {
-    textBackdrop: {
-      graphics: Phaser.GameObjects.Graphics;
-      width: number,
-      height: number,
-      margin: number,
-    },
-    text: {
-      object: Phaser.GameObjects.Text,
-      size: number,
-      margin: number,
-      lineSpacing: number,
-    }
-  };
+  // Infer the shapes based on the return types.
+  hud: ReturnType<typeof createUninitializedHUD>;
+  keys: ReturnType<typeof createKeys>;
 }
 
 export type Selector<T> = (state: State) => T;
