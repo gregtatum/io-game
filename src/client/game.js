@@ -340,6 +340,7 @@ function maybeStartMovingCharacter(state) {
     // Do not move the player while there is a message displayed.
     return;
   }
+
   if (!player.isMoving) {
     // The player is not moving, and is free to change directions.
     const desiredDirection = getDirectionFromControls(state);
@@ -714,6 +715,14 @@ function createPlayer(scene, tilemap, objects) {
       ensureExists(y) * SCALE_PIXELS + PLAYER_OFFSET_Y
     );
   }
+
+  function resetPlayer() {
+    sprite.setPosition(
+      ensureExists(x) * SCALE_PIXELS + PLAYER_OFFSET_X,
+      ensureExists(y) * SCALE_PIXELS + PLAYER_OFFSET_Y
+    );
+  }
+  setDebugGlobal('resetPlayer', resetPlayer);
 
   sprite.setFrame(getFrameIndexFromDirection(characterIndex, 'down').standing);
 
