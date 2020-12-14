@@ -8,5 +8,18 @@
 <body>
   <script type="module" src="index.js"></script>
   <script src="assets/phaser/phaser.js"></script>
+  <script type='text/javascript'>
+    if (
+      window.location.host === "gregtatum.com"
+      || window.location.host.match(/^\w+\.gregtatum\.com$/)
+    ) {
+      // Only add analytics when hosted on gregtatum.com
+      const script = document.createElement('script');
+      script.setAttribute('defer', true);
+      script.setAttribute('src', 'https://static.cloudflareinsights.com/beacon.min.js');
+      script.setAttribute('data-cf-beacon', '{"token": "d9762de0ce68411daac3e767379c5c79"}');
+      document.body.append(script);
+    }
+  </script>
 </body>
 </html>
